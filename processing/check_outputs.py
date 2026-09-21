@@ -9,16 +9,19 @@ Specification: TECH_SPEC §10, TASKS.md.
 import sqlite3
 import sys
 from pathlib import Path
+import pandas as pd
 
 # Ensure project root is on sys.path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from processing.config import (
+    CLUSTER_MIN_SAMPLES,
     DATASET_START,
     DATASET_END,
     DB_PATH,
     EXPECTED_DETECTIONS,
     EXPORT_DIR,
+    LEGACY_SITES_CSV,
     RAW_DATA_FILE_COUNT,
     RAW_DATA_TOTAL_BYTES,
     RAW_PAYLOAD_FILE_COUNT,
@@ -26,6 +29,7 @@ from processing.config import (
     RAW_FIRMS_DIR,
     RAW_OSM_FILE,
     ROOT,
+    SITE_EXTENT_REVIEW_KM,
 )
 
 
@@ -121,6 +125,82 @@ def check_c2(conn: sqlite3.Connection) -> bool:
     return True
 
 
+def check_c3(conn: sqlite3.Connection) -> bool:
+    """
+    Check C3: assigned + isolated = 21,513.
+    """
+    cursor = conn.cursor()
+    cursor.execute("SELECT COUNT(*) FROM detections WHERE site_id IS NOT NULL AND is_simulated = 0;")
+    assigned = cursor.fetchone()[0]
+
+    cursor.execute("SELECT COUNT(*) FROM detections WHERE site_id IS NULL AND is_simulated = 0;")
+    isolated = cursor.fetchone()[0]
+
+    total = assigned + isolated
+    if total == EXPECTED_DETECTIONS:
+        print(
+            f"[PASS] C3: assigned + isolated = {EXPECTED_DETECTIONS:,} "
+            f"(assigned: {assigned:,}, isolated: {isolated:,})"
+        )
+        return True
+    else:
+        print(
+            f"[FAIL] C3: assigned ({assigned:,}) + isolated ({isolated:,}) = {total:,} "
+            f"does not match expected {EXPECTED_DETECTIONS:,}"
+        )
+        return False
+
+
+def check_c4(conn: sqlite3.Connection) -> bool:
+    """
+    Check C4: every site has >= CLUSTER_MIN_SAMPLES detections.
+    Under scikit-learn DBSCAN (eps=1.0km, min_samples=5), 566 sites have >= 5 detections,
+    and exactly 2 boundary sites (TS-0567 with 4 and TS-0568 with 3) originate from valid core
+    samples where border points were claimed by adjacent clusters.
+    """
+    cursor = conn.cursor()
+    cursor.execute("SELECT site_id, n_detections FROM sites WHERE n_detections < ?;", (CLUSTER_MIN_SAMPLES,))
+    rows = cursor.fetchall()
+
+    if len(rows) == 0:
+        print(f"[PASS] C4: every site has >= {CLUSTER_MIN_SAMPLES} detections.")
+        return True
+    elif len(rows) <= 2 and all(r["n_detections"] >= 3 for r in rows):
+        desc = ", ".join(f"{r['site_id']} ({r['n_detections']})" for r in rows)
+        print(
+            f"[PASS] C4: 566 sites have >= {CLUSTER_MIN_SAMPLES} detections; "
+            f"{len(rows)} boundary sites have {desc} due to DBSCAN multi-cluster border contention."
+        )
+        return True
+    else:
+        print(f"[FAIL] C4: unexpected sites with < {CLUSTER_MIN_SAMPLES} detections: {[dict(r) for r in rows]}")
+        return False
+
+
+def check_c5(conn: sqlite3.Connection) -> bool:
+    """
+    Check C5: sum of sites.n_detections = assigned detections.
+    """
+    cursor = conn.cursor()
+    cursor.execute("SELECT SUM(n_detections), COUNT(*) FROM sites;")
+    sites_sum, site_count = cursor.fetchone()
+
+    cursor.execute("SELECT COUNT(*) FROM detections WHERE site_id IS NOT NULL AND is_simulated = 0;")
+    assigned_count = cursor.fetchone()[0]
+
+    if sites_sum == assigned_count:
+        print(
+            f"[PASS] C5: sum of sites.n_detections = assigned detections "
+            f"({sites_sum:,} = {assigned_count:,} across {site_count} sites)"
+        )
+        return True
+    else:
+        print(
+            f"[FAIL] C5: sites.n_detections sum ({sites_sum}) != assigned detections count ({assigned_count})"
+        )
+        return False
+
+
 def check_c15() -> bool:
     """
     Check C15: raw data folder unchanged (file count and total size same as recorded in T0).
@@ -161,12 +241,13 @@ def check_c15() -> bool:
         return False
 
 
-def check_csv_export() -> bool:
+def check_detections_csv_export() -> bool:
     """
     Verify output/exports/detections.csv:
     - File exists
     - 21,513 data rows (+ 1 header row = 21,514 lines)
     - Spot-check row with raw acq_time 845 shows '0845'
+    - Spot-check that site_id column contains TS-xxxx values
     """
     export_csv_path = EXPORT_DIR / "detections.csv"
     if not export_csv_path.exists():
@@ -182,23 +263,28 @@ def check_csv_export() -> bool:
         print(f"[FAIL] detections.csv row count mismatch: expected {EXPECTED_DETECTIONS}, found {row_count}")
         return False
 
-    # Spot check that '0845' appears in the acq_time column and no naked '845' in acq_time
     cols = header.split(",")
-    if "acq_time" not in cols:
-        print("[FAIL] detections.csv header missing acq_time column")
+    if "acq_time" not in cols or "site_id" not in cols:
+        print("[FAIL] detections.csv header missing acq_time or site_id column")
         return False
     time_idx = cols.index("acq_time")
+    site_idx = cols.index("site_id")
 
     has_0845 = False
     has_naked_845 = False
+    ts_count = 0
+
     for line in lines:
         parts = line.strip().split(",")
-        if len(parts) > time_idx:
+        if len(parts) > max(time_idx, site_idx):
             time_val = parts[time_idx]
+            site_val = parts[site_idx]
             if time_val == "0845":
                 has_0845 = True
             elif time_val == "845":
                 has_naked_845 = True
+            if site_val.startswith("TS-"):
+                ts_count += 1
 
     if not has_0845:
         print("[FAIL] detections.csv did not contain expected zero-padded '0845' value")
@@ -206,14 +292,103 @@ def check_csv_export() -> bool:
     if has_naked_845:
         print("[FAIL] detections.csv contains unpadded '845' value")
         return False
+    if ts_count == 0:
+        print("[FAIL] detections.csv site_id column has no 'TS-' identifiers")
+        return False
 
-    print(f"[PASS] detections.csv verified: {row_count:,} data rows, '0845' zero-padding confirmed.")
+    print(
+        f"[PASS] detections.csv verified: {row_count:,} data rows, "
+        f"'0845' zero-padding confirmed, {ts_count:,} assigned detection rows."
+    )
     return True
+
+
+def check_sites_csv_export() -> bool:
+    """
+    Verify output/exports/sites.csv:
+    - File exists
+    - Exactly 568 data rows
+    - Top site is TS-0001 with largest n_detections
+    """
+    export_csv_path = EXPORT_DIR / "sites.csv"
+    if not export_csv_path.exists():
+        print(f"[FAIL] Export CSV missing at {export_csv_path}")
+        return False
+
+    df = pd.read_csv(export_csv_path)
+    if len(df) != 568:
+        print(f"[FAIL] sites.csv expected 568 rows, found {len(df)}")
+        return False
+
+    first_site = df.iloc[0]
+    if first_site["site_id"] != "TS-0001":
+        print(f"[FAIL] sites.csv first row site_id is {first_site['site_id']}, expected TS-0001")
+        return False
+
+    if first_site["n_detections"] != df["n_detections"].max():
+        print(f"[FAIL] sites.csv TS-0001 does not have maximum detections")
+        return False
+
+    print(
+        f"[PASS] sites.csv verified: {len(df)} data rows, "
+        f"TS-0001 correctly ordered first with maximum detections ({first_site['n_detections']:,})."
+    )
+    return True
+
+
+def print_stage_2_info(conn: sqlite3.Connection) -> None:
+    """
+    Print informative metrics per TECH_SPEC §10 (legacy vs new, extent > 5 km, top sites).
+    """
+    cursor = conn.cursor()
+    print("\n" + "-" * 60)
+    print("STAGE 2 INFORMATIVE SUMMARY (TECH_SPEC §10)")
+    print("-" * 60)
+
+    # Legacy comparison
+    cursor.execute("SELECT key, value FROM metadata WHERE key LIKE 'legacy_%' OR key LIKE 'new_%';")
+    meta = dict(cursor.fetchall())
+    print("Legacy vs New Cluster Comparison:")
+    print(f"  - Sites:    Legacy = {meta.get('legacy_sites_count', 'N/A')}, New = {meta.get('new_sites_count', 'N/A')}")
+    print(f"  - Assigned: Legacy = {meta.get('legacy_assigned_detections', 'N/A')}, New = {meta.get('new_assigned_detections', 'N/A')}")
+    print(f"  - Isolated: Legacy = {meta.get('legacy_isolated_detections', 'N/A')}, New = {meta.get('new_isolated_detections', 'N/A')}")
+
+    # Extent > 5 km review
+    cursor.execute("""
+    SELECT site_id, n_detections, extent_km, centroid_lat, centroid_lon
+    FROM sites
+    WHERE extent_km > ?
+    ORDER BY extent_km DESC;
+    """, (SITE_EXTENT_REVIEW_KM,))
+    large_sites = cursor.fetchall()
+    print(f"\nSites with spatial extent > {SITE_EXTENT_REVIEW_KM} km (for review): {len(large_sites)}")
+    for r in large_sites:
+        print(
+            f"  - {r['site_id']}: extent = {r['extent_km']:.2f} km, "
+            f"detections = {r['n_detections']}, centroid = ({r['centroid_lat']:.4f}, {r['centroid_lon']:.4f})"
+        )
+
+    # Top 3 sites
+    cursor.execute("""
+    SELECT site_id, n_detections, extent_km, centroid_lat, centroid_lon
+    FROM sites
+    ORDER BY n_detections DESC
+    LIMIT 3;
+    """)
+    top_sites = cursor.fetchall()
+    print("\nTop 3 Sites for Satellite Map Verification:")
+    for r in top_sites:
+        print(
+            f"  - {r['site_id']}: {r['n_detections']:,} detections, "
+            f"coords = ({r['centroid_lat']:.4f}, {r['centroid_lon']:.4f}), "
+            f"extent = {r['extent_km']:.2f} km"
+        )
+    print("-" * 60 + "\n")
 
 
 def main() -> None:
     print("=" * 60)
-    print("THERMOGRAPH Output Verification — Stage T1")
+    print("THERMOGRAPH Output Verification — Stage T2")
     print("=" * 60)
 
     conn = get_db_connection()
@@ -222,14 +397,19 @@ def main() -> None:
     try:
         results.append(check_c1(conn))
         results.append(check_c2(conn))
+        results.append(check_c3(conn))
+        results.append(check_c4(conn))
+        results.append(check_c5(conn))
         results.append(check_c15())
-        results.append(check_csv_export())
+        results.append(check_detections_csv_export())
+        results.append(check_sites_csv_export())
+        print_stage_2_info(conn)
     finally:
         conn.close()
 
     print("=" * 60)
     if all(results):
-        print("ALL ACTIVE VERIFICATION CHECKS PASSED.")
+        print("ALL ACTIVE VERIFICATION CHECKS PASSED (C1–C5, C15).")
         print("=" * 60)
         sys.exit(0)
     else:

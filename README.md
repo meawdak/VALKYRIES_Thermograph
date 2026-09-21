@@ -70,6 +70,19 @@ The current proof-of-concept is intentionally limited to a manageable geographic
 
 The FIRMS dataset was checked for missing coordinates, missing FRP values, and duplicate rows before processing. The verified dataset contains 21,513 detections, with no missing coordinates, no missing FRP values, and no duplicate rows. fileciteturn1file0
 
+### Current Verified Dataset
+
+The T0 inspection and T1 ingestion stages verified:
+
+- **73** FIRMS CSV files
+- **21,513** FIRMS detections
+- **1 July 2025 – 30 June 2026** coverage
+- **710** OSM industrial facility features
+- **10,539** detections assigned to existing candidate thermal sites
+- **10,974** detections classified as DBSCAN noise/isolated observations in the legacy clustering output
+
+The current dataset is used for prototype development and demonstration. It does not represent a production-scale national monitoring system.
+
 ### Why Gujarat?
 
 The prototype uses Gujarat as a focused demonstration region. This keeps processing lightweight while providing enough industrial and thermal activity to demonstrate the complete workflow.
@@ -109,6 +122,9 @@ The raw observations are combined and checked for:
 - Consistent dates and times
 
 Raw source files remain unchanged. Processed outputs are stored separately.
+The current prototype stores processed FIRMS detections in a local SQLite database. The T1 ingestion stage loaded all 21,513 verified detections and created a canonical CSV export for downstream processing.
+
+Each detection includes normalized acquisition time, UTC timestamp information, and a week index used by later historical analysis.
 
 ### 3. Spatial Clustering
 
@@ -126,6 +142,7 @@ A site can be:
 - **Unmapped / unverified** when there is no sufficiently reliable match
 
 The system should not assign a facility identity when the available evidence does not support it. This follows the human-in-the-loop approach described in the technical report. fileciteturn1file7
+The current Gujarat OSM dataset contains 710 industrial facility features, all represented as Point geometries. Therefore, the prototype uses proximity-based matching rather than polygon containment.
 
 ### 5. Historical Baseline
 
@@ -200,6 +217,7 @@ For the lightweight proof-of-concept, implementation choices may be simplified w
 | Layer | Prototype direction |
 |---|---|
 | Data processing | Python, Pandas |
+| FIRMS ingestion | Python + Pandas |
 | Spatial processing | Python geospatial calculations |
 | Prototype storage | SQLite |
 | Backend API | Flask |
@@ -219,22 +237,26 @@ The repository is being developed incrementally. The intended structure is:
 ```text
 VALKYRIES_Thermograph/
 │
-├── data/
-│   ├── firms/                 # Raw FIRMS CSV files
-│   └── osm/                   # Raw OSM facility data
+├── data/                         # Raw FIRMS and OSM source data
 │
-├── processed/                 # Generated/cleaned data
+├── processing/                   # Data ingestion and processing scripts
+│   ├── db.py
+│   ├── load_firms.py
+│   ├── check_outputs.py
+│   ├── cluster_firms.py
+│   └── config.py
 │
-├── src/                       # Processing and application code
+├── output/                       # Generated and legacy outputs
+│   └── thermal_sites.csv
 │
-├── dashboard/                 # Web dashboard
+├── docs/                         # Project documentation and reports
 │
-├── tests/                     # Validation tests
-│
-├── docs/                      # Project documentation
-│
-├── README.md
+├── AGENTS.md
+├── PRD.md
+├── TECH_SPEC.md
+├── TASKS.md
 ├── requirements.txt
+├── README.md
 └── .gitignore
 ```
 
@@ -302,11 +324,15 @@ These principles support the project's stated goals of contextual, explainable, 
 - [x] OSM industrial facility dataset collected
 - [x] OSM GeoJSON validation
 - [x] Prototype scope defined
+- [x] Project and data inspection (T0)
+- [x] FIRMS ingestion into SQLite (T1)
+- [x] Detection data validation and export
+- [x] Git-based project setup
 
 ### In Progress
 
-- [ ] Thermal-site clustering
-- [ ] Persistent site registry
+- [ ] Spatial clustering of FIRMS detections
+- [ ] Persistent thermal-site registry
 - [ ] OSM facility matching
 - [ ] Per-site historical baseline
 - [ ] Rule-based anomaly detection

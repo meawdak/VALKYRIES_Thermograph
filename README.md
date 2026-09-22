@@ -1,4 +1,3 @@
-[README_fixed.md](https://github.com/user-attachments/files/32531590/README_fixed.md)
 # THERMOGRAPH
 
 ### AI-Based Detection and Classification of Industrial Fires and Persistent Thermal Sources Using NASA FIRMS, OSM & Satellite Data

@@ -19,6 +19,9 @@ SIM_CSV = ROOT / "output" / "simulated" / "simulated_detections.csv"
 MATCHED_SITES_CSV = ROOT / "output" / "thermal_sites_matched.csv"
 FACILITIES_EXPORT_CSV = EXPORT_DIR / "facilities.csv"
 SITES_EXPORT_CSV = EXPORT_DIR / "sites.csv"
+SITE_WEEKLY_EXPORT_CSV = EXPORT_DIR / "site_weekly.csv"
+BASELINES_EXPORT_CSV = EXPORT_DIR / "baselines.csv"
+ANOMALIES_EXPORT_CSV = EXPORT_DIR / "anomalies.csv"
 
 # --- Expected Input Facts (pipeline stops if different) ---
 EXPECTED_DETECTIONS = 21513

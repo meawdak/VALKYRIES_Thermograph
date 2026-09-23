@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>THERMOGRAPH — Satellite Thermal Anomaly Monitoring</title>
+  <link rel="stylesheet" href="/static/vendor/leaflet/leaflet.css">
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="/static/vendor/leaflet/leaflet.js"></script>
+  <script src="/static/vendor/chartjs/chart.umd.min.js"></script>
+  <script src="/static/app.js" defer></script>
+</head>
+<body>
+  <!-- Header Bar with Global Operational Metrics -->
+  <header class="header">
+    <div class="header-brand">
+      <div class="brand-title">THERMOGRAPH</div>
+      <div class="brand-subtitle">Satellite Thermal Anomaly Monitoring · Gujarat</div>
+      <div class="brand-tags">
+        <span class="tag tag-period" id="tag-period">1 Jul 2025 – 30 Jun 2026</span>
+        <span class="tag tag-status" id="tag-status">Status as of 30 Jun 2026</span>
+      </div>
+    </div>
+
+    <div class="header-metrics" id="header-metrics">
+      <div class="metric-item">
+        <span class="metric-val" id="metric-detections">—</span>
+        <span class="metric-lbl">Detections</span>
+      </div>
+      <div class="metric-item">
+        <span class="metric-val" id="metric-sites">—</span>
+        <span class="metric-lbl">Sites</span>
+      </div>
+      <div class="metric-item">
+        <span class="metric-val" id="metric-isolated">—</span>
+        <span class="metric-lbl">Isolated</span>
+      </div>
+      <div class="metric-item">
+        <span class="metric-val" id="metric-facilities">—</span>
+        <span class="metric-lbl">Facilities</span>
+      </div>
+      <div class="metric-item">
+        <span class="metric-val" id="metric-matched">—</span>
+        <span class="metric-lbl">Matched</span>
+      </div>
+      <div class="metric-item">
+        <span class="metric-val" id="metric-anomalous">—</span>
+        <span class="metric-lbl">Anomalous</span>
+      </div>
+      <div class="metric-item">
+        <span class="metric-val" id="metric-normal">—</span>
+        <span class="metric-lbl">Normal</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main View Container: Map + Slide-out Site Panel -->
+  <main class="main-container">
+    <!-- Map Canvas Area -->
+    <div id="map-container" class="map-container">
+      <div id="map"></div>
+    </div>
+
+    <!-- Right-Side Site Detail Panel (Opens on site click) -->
+    <aside id="site-panel" class="site-panel closed" aria-label="Site details">
+      <!-- Empty Placeholder State -->
+      <div id="panel-placeholder" class="panel-placeholder">
+        <div class="placeholder-icon">📍</div>
+        <div class="placeholder-title">Select a Thermal Site</div>
+        <div class="placeholder-desc">Click any thermal site marker on the Gujarat map to inspect its historical heat output, baseline, and anomaly explanations.</div>
+      </div>
+
+      <!-- Loaded Site Detail Content -->
+      <div id="panel-content" class="panel-content" style="display: none;">
+        <!-- Panel Header -->
+        <div class="panel-header">
+          <div>
+            <div class="panel-site-id" id="panel-site-id">TS-0000</div>
+            <div class="panel-site-status" id="panel-site-status">NORMAL</div>
+          </div>
+          <button id="close-panel-btn" class="close-btn" title="Close detail panel">✕</button>
+        </div>
+
+        <!-- Rule-Based Classification -->
+        <div class="card card-class">
+          <div class="card-label">Rule-based Class</div>
+          <div class="class-title" id="panel-class-title">—</div>
+          <div class="class-desc" id="panel-class-desc">Rule-based classification derived from baseline continuity and facility match.</div>
+        </div>
+
+        <!-- Facility Match Context -->
+        <div class="card card-facility" id="panel-facility-card">
+          <div class="card-label">Facility Context</div>
+          <div id="panel-facility-content">
+            <!-- Populated dynamically via JS -->
+          </div>
+        </div>
+
+        <!-- Evidence & Summary Stats -->
+        <div class="card card-stats">
+          <div class="card-label">Observational Evidence (12 Months)</div>
+          <div class="stats-grid">
+            <div class="stat-box">
+              <span class="stat-val" id="stat-detections">—</span>
+              <span class="stat-lbl">Detections</span>
+            </div>
+            <div class="stat-box">
+              <span class="stat-val" id="stat-active-weeks">—</span>
+              <span class="stat-lbl">Active Weeks</span>
+            </div>
+            <div class="stat-box">
+              <span class="stat-val" id="stat-night-pct">—</span>
+              <span class="stat-lbl">Night Share</span>
+            </div>
+            <div class="stat-box">
+              <span class="stat-val" id="stat-static-pct">—</span>
+              <span class="stat-lbl">Static Type</span>
+            </div>
+            <div class="stat-box">
+              <span class="stat-val" id="stat-mean-frp">—</span>
+              <span class="stat-lbl">Mean FRP</span>
+            </div>
+            <div class="stat-box">
+              <span class="stat-val" id="stat-max-frp">—</span>
+              <span class="stat-lbl">Max FRP</span>
+            </div>
+          </div>
+          <div class="stat-dates">
+            <span>First seen: <strong id="stat-first-seen">—</strong></span>
+            <span>Last seen: <strong id="stat-last-seen">—</strong></span>
+          </div>
+        </div>
+
+        <!-- Baseline Statistics -->
+        <div class="card card-baseline">
+          <div class="card-label">Baseline Behavior (Weeks 0–38)</div>
+          <div id="panel-baseline-body">
+            <!-- Populated dynamically -->
+          </div>
+        </div>
+
+        <!-- 52-Week FRP History Chart -->
+        <div class="card card-chart">
+          <div class="card-label">Weekly Heat Output History (MW)</div>
+          <div class="chart-wrapper">
+            <canvas id="weekly-chart"></canvas>
+          </div>
+          <div class="chart-notes">
+            <span class="legend-note baseline-note">■ Baseline (W0–W38)</span>
+            <span class="legend-note monitoring-note">■ Monitoring (W39–W51)</span>
+            <span class="legend-note threshold-note">-- Upper limit (mean + 3σ)</span>
+          </div>
+        </div>
+
+        <!-- Anomalies & Plain-English Explanations -->
+        <div class="card card-anomalies">
+          <div class="card-label">Monitoring Period Anomalies (Weeks 39–51)</div>
+          <div id="panel-anomalies-list">
+            <!-- Populated dynamically -->
+          </div>
+        </div>
+      </div>
+    </aside>
+  </main>
+</body>
+</html>

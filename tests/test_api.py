@@ -39,9 +39,29 @@ class ThermographApiTestCase(unittest.TestCase):
         cls.client = cls.app.test_client()
 
     def test_root_index(self):
-        """GET / returns 200 and an operational summary or index file."""
+        """GET / returns 200 and serves the dashboard HTML."""
         res = self.client.get("/")
         self.assertEqual(res.status_code, 200)
+        content = res.get_data(as_text=True)
+        self.assertIn("THERMOGRAPH", content)
+        self.assertIn("weekly-chart", content)
+        res.close()
+
+    def test_static_assets(self):
+        """Verify static CSS, JS, and vendor assets are served locally without CDN."""
+        asset_paths = [
+            "/static/style.css",
+            "/static/app.js",
+            "/static/vendor/leaflet/leaflet.css",
+            "/static/vendor/leaflet/leaflet.js",
+            "/static/vendor/chartjs/chart.umd.min.js",
+        ]
+        for path in asset_paths:
+            res = self.client.get(path)
+            self.assertEqual(res.status_code, 200, f"Failed to serve {path}")
+            data = res.get_data()
+            self.assertGreater(len(data), 0, f"Empty content in {path}")
+            res.close()
 
     # -------------------------------------------------------------------------
     # Test 1: GET /api/dashboard

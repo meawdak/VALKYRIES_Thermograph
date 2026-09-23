@@ -35,7 +35,22 @@ The broader project architecture described in the technical report also allows f
 
 ---
 
-## Problem
+## Quick Start
+
+The entire prototype runs with two commands:
+
+1. **Run the data processing pipeline** (loads raw FIRMS CSVs, clusters thermal sites, matches OSM facilities, builds 52-week activity history, computes 39-week baselines, detects anomalies, generates simulation, and verifies all checks C1–C15):
+   ```bash
+   python processing/run_pipeline.py
+   ```
+
+2. **Start the Flask API backend and interactive GIS dashboard**:
+   ```bash
+   python app/app.py
+   ```
+   Then open your browser at `http://127.0.0.1:5000/` to access the interactive map, priority anomaly sidebar, and site inspection panel.
+
+---
 
 Industrial facilities such as refineries, petrochemical complexes, power plants, steel plants, mining sites, and LNG terminals can produce thermal signatures that are visible from space.
 

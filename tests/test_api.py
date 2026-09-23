@@ -39,12 +39,24 @@ class ThermographApiTestCase(unittest.TestCase):
         cls.client = cls.app.test_client()
 
     def test_root_index(self):
-        """GET / returns 200 and serves the dashboard HTML."""
+        """GET / returns 200 and serves the complete dashboard HTML with T11 and T12 elements."""
         res = self.client.get("/")
         self.assertEqual(res.status_code, 200)
         content = res.get_data(as_text=True)
+        # T11 core elements
         self.assertIn("THERMOGRAPH", content)
         self.assertIn("weekly-chart", content)
+        self.assertIn("map-container", content)
+        self.assertIn("site-panel", content)
+        # T12 elements: Priority sidebar, Simulation banner, About modal
+        self.assertIn("priority-sidebar", content)
+        self.assertIn("priority-list", content)
+        self.assertIn("priority-search-input", content)
+        self.assertIn("sim-banner", content)
+        self.assertIn("toggle-sim-btn", content)
+        self.assertIn("about-modal", content)
+        self.assertIn("about-btn", content)
+        self.assertIn("Scientific Limitations &amp; Cautions", content)
         res.close()
 
     def test_static_assets(self):

@@ -11,7 +11,7 @@
   <script src="/static/app.js" defer></script>
 </head>
 <body>
-  <!-- Header Bar with Global Operational Metrics -->
+  <!-- Header Bar with Global Operational Metrics & Controls -->
   <header class="header">
     <div class="header-brand">
       <div class="brand-title">THERMOGRAPH</div>
@@ -22,6 +22,18 @@
       </div>
     </div>
 
+    <!-- Header Controls: Simulation Toggle and About Modal Button -->
+    <div class="header-actions">
+      <button id="toggle-sim-btn" class="action-btn sim-toggle-btn" title="Toggle simulated demonstration event">
+        <span class="toggle-dot" id="sim-toggle-dot"></span>
+        <span id="sim-toggle-label">Demo Simulation: OFF</span>
+      </button>
+      <button id="about-btn" class="action-btn about-btn" title="View methodology and prototype limits">
+        About &amp; Methodology
+      </button>
+    </div>
+
+    <!-- Header Global Metrics Counter Badges -->
     <div class="header-metrics" id="header-metrics">
       <div class="metric-item">
         <span class="metric-val" id="metric-detections">—</span>
@@ -54,9 +66,40 @@
     </div>
   </header>
 
-  <!-- Main View Container: Map + Slide-out Site Panel -->
+  <!-- Highly Visible Persistent Simulated Data Indicator Banner -->
+  <div id="sim-banner" class="sim-banner" style="display: none;">
+    <div class="sim-banner-content">
+      <span class="sim-pill">SIMULATED DEMONSTRATION DATA ACTIVE</span>
+      <span class="sim-text">
+        Displaying synthetic demo event at site <strong>TS-0001</strong> (Week 52: 1–7 Jul 2026).
+        <strong>This is NOT a real observation.</strong> Baseline and real observation records remain unchanged.
+      </span>
+      <button id="sim-banner-off-btn" class="sim-banner-btn" title="Deactivate demonstration simulation">
+        Turn Off Simulation
+      </button>
+    </div>
+  </div>
+
+  <!-- Main View Container: Priority Sidebar + Map Canvas + Site Detail Panel -->
   <main class="main-container">
-    <!-- Map Canvas Area -->
+    <!-- Left Sidebar: Priority / Anomaly List (T12) -->
+    <aside id="priority-sidebar" class="priority-sidebar" aria-label="Priority anomalies">
+      <div class="sidebar-header">
+        <div class="sidebar-title-row">
+          <div class="sidebar-title">Priority Anomalies</div>
+          <span class="count-pill" id="priority-count-pill">— sites</span>
+        </div>
+        <div class="sidebar-subtitle">Ranked by baseline deviation &amp; FRP intensity</div>
+        <div class="sidebar-search-row">
+          <input type="text" id="priority-search-input" class="search-input" placeholder="Filter site, facility, or level..." aria-label="Filter anomalies">
+        </div>
+      </div>
+      <div id="priority-list" class="priority-list">
+        <!-- Rendered dynamically from /api/risk -->
+      </div>
+    </aside>
+
+    <!-- Center Map Canvas Area -->
     <div id="map-container" class="map-container">
       <div id="map"></div>
     </div>
@@ -67,7 +110,7 @@
       <div id="panel-placeholder" class="panel-placeholder">
         <div class="placeholder-icon">📍</div>
         <div class="placeholder-title">Select a Thermal Site</div>
-        <div class="placeholder-desc">Click any thermal site marker on the Gujarat map to inspect its historical heat output, baseline, and anomaly explanations.</div>
+        <div class="placeholder-desc">Click any site marker on the map or select an anomalous site from the priority list to inspect historical heat output, baseline limits, and anomaly reasons.</div>
       </div>
 
       <!-- Loaded Site Detail Content -->
@@ -149,6 +192,7 @@
             <span class="legend-note baseline-note">■ Baseline (W0–W38)</span>
             <span class="legend-note monitoring-note">■ Monitoring (W39–W51)</span>
             <span class="legend-note threshold-note">-- Upper limit (mean + 3σ)</span>
+            <span class="legend-note sim-note" id="chart-sim-note" style="display: none;">■ [SIMULATED] W52</span>
           </div>
         </div>
 
@@ -162,5 +206,68 @@
       </div>
     </aside>
   </main>
+
+  <!-- About & Methodology Modal (T12) -->
+  <div id="about-modal" class="modal-overlay" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h2 id="modal-title">About THERMOGRAPH Prototype (Gujarat)</h2>
+        <button id="close-about-btn" class="close-btn" title="Close modal">✕</button>
+      </div>
+      <div class="modal-body">
+        <section class="modal-section">
+          <h3>Core Concept</h3>
+          <p><strong>"THERMOGRAPH classifies places, not individual hotspots."</strong></p>
+          <p>
+            NASA FIRMS active fire satellites detect thermal signatures, but individual hotspots alone do not indicate whether an observation represents routine flaring, agricultural clearing, or an unusual industrial event. THERMOGRAPH connects thermal observations to geography, historical site continuity, and facility context.
+          </p>
+        </section>
+
+        <section class="modal-section">
+          <h3>Methodology &amp; Workflow</h3>
+          <ul class="modal-bullets">
+            <li><strong>Data Monitoring:</strong> 12 months of NASA FIRMS (VIIRS) satellite observations (1 Jul 2025 – 30 Jun 2026, 21,513 detections) covering Gujarat, India.</li>
+            <li><strong>Spatial Clustering:</strong> Repeated thermal detections are grouped into persistent candidate thermal sites using DBSCAN (haversine metric, 1.0 km radius, minimum 5 detections). Unassigned detections are preserved as isolated hotspots.</li>
+            <li><strong>Facility Context:</strong> Sites are matched against 710 OpenStreetMap (OSM) industrial features in projected coordinates (EPSG:32643, UTM zone 43N). Matches are categorized as <em>inside</em> polygon boundary, <em>nearby</em> (&le;1,000 m), or <em>unmapped</em>.</li>
+            <li><strong>Historical Baselines:</strong> Weeks 0–38 (1 Jul 2025 – 30 Mar 2026, 39 weeks) establish normal behavior. Sites active in &ge;10 baseline weeks establish a statistical baseline with upper limit threshold = mean + 3&times;std dev of weekly heat output (FRP sum).</li>
+            <li><strong>Transparent Anomaly Logic:</strong> Monitoring weeks 39–51 (31 Mar 2026 – 30 Jun 2026) detect statistical baseline exceedances and new activity. Priority levels (HIGH, MEDIUM, LOW) are scored using documented, transparent prototype points.</li>
+          </ul>
+        </section>
+
+        <section class="modal-section">
+          <h3>Prototype Settings &amp; Parameters</h3>
+          <table class="settings-table">
+            <thead>
+              <tr><th>Parameter</th><th>Prototype Setting</th><th>Scientific Purpose</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>Dataset Period</td><td>2025-07-01 to 2026-06-30</td><td>12-month observational replay (Gujarat)</td></tr>
+              <tr><td>Clustering Distance</td><td>1.0 km (Haversine)</td><td>DBSCAN spatial grouping radius</td></tr>
+              <tr><td>Minimum Detections</td><td>5 points</td><td>Minimum observations to form a candidate site</td></tr>
+              <tr><td>Facility Search Radius</td><td>1,000 m</td><td>Maximum distance for nearby facility association</td></tr>
+              <tr><td>Baseline Period</td><td>Weeks 0–38 (39 weeks)</td><td>Statistical reference distribution window</td></tr>
+              <tr><td>Monitoring Period</td><td>Weeks 39–51 (13 weeks)</td><td>Active anomaly evaluation window</td></tr>
+              <tr><td>Statistical Upper Limit</td><td>Mean + 3 &times; Std Dev</td><td>Threshold for baseline exceedance (&alpha; &approx; 0.13%)</td></tr>
+              <tr><td>Priority Scoring</td><td>High &ge;5, Medium 3–4, Low 1–2</td><td>Weighted sum: deviation, FRP intensity, facility proximity</td></tr>
+            </tbody>
+          </table>
+        </section>
+
+        <section class="modal-section warning-section">
+          <h3>Scientific Limitations &amp; Cautions (PRD &sect;11)</h3>
+          <ul class="modal-bullets">
+            <li><strong>Observational Indicators Only:</strong> Results are observational indicators requiring ground verification. They are <em>not</em> confirmed emergency incidents, environmental violations, or real-world alerts.</li>
+            <li><strong>12-Month Single-Year Baseline:</strong> 12 months of observations cannot separate recurring seasonal patterns (e.g. crop-residue burning or monsoon cloud attenuation) from true industrial anomalies.</li>
+            <li><strong>Cloud Cover Attenuation:</strong> Satellites cannot detect thermal radiation through dense cloud cover; monsoon weeks may undercount activity and depress historical averages.</li>
+            <li><strong>OSM Incompleteness:</strong> OpenStreetMap data is community-sourced. "Unmapped" indicates no mapped industrial feature within 1 km in OSM, <em>never</em> that a source is illegal or non-industrial.</li>
+            <li><strong>No Machine Learning:</strong> No predictive AI or synthetic "confidence %" is used. All classifications are transparent rule-based prototype settings.</li>
+          </ul>
+        </section>
+      </div>
+      <div class="modal-footer">
+        <button id="modal-dismiss-btn" class="primary-btn">Close</button>
+      </div>
+    </div>
+  </div>
 </body>
 </html>

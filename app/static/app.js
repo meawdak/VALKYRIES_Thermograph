@@ -1,7 +1,7 @@
 /**
- * THERMOGRAPH — Client Dashboard Application (Task T11)
+ * THERMOGRAPH — Client Dashboard Application (Task T11 + T12)
  * Plain JavaScript consuming the Flask REST API.
- * Conforms to TECH_SPEC §9 and PRD §7.9.
+ * Conforms to TECH_SPEC §9 and PRD §7.9, §10, §11.
  */
 
 // PRD FR-16 Human-readable Rule-based Class Labels
@@ -30,6 +30,10 @@ let isolatedLayer = null;
 let isolatedDataLoaded = false;
 let currentChart = null;
 let activeSiteMarker = null;
+let activeSiteId = null;
+let isSimulated = false; // Simulation state: default is real data (False)
+let riskData = []; // Cached ranked anomalous sites
+let markersBySiteId = {}; // Fast lookup for map markers
 
 // Helper: Escape HTML strings to prevent XSS
 function escapeHtml(str) {
@@ -131,9 +135,10 @@ function initMap() {
 // -----------------------------------------------------------------------------
 async function loadDashboardCounts() {
   try {
-    const res = await fetch("/api/dashboard");
+    const url = isSimulated ? "/api/dashboard?include_simulated=1" : "/api/dashboard";
+    const res = await fetch(url);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.get_json ? await res.get_json() : await res.json();
+    const data = await res.json();
 
     const counts = data.counts || {};
     document.getElementById("metric-detections").textContent = formatNumber(counts.detections);
@@ -160,23 +165,37 @@ async function loadDashboardCounts() {
 // -----------------------------------------------------------------------------
 async function loadSites() {
   try {
+    sitesLayer.clearLayers();
+    markersBySiteId = {};
+
     const res = await fetch("/api/sites");
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const sites = await res.json();
 
     sites.forEach(site => {
+      const isTargetSimSite = isSimulated && site.site_id === "TS-0001";
       const color = STATUS_COLORS[site.status] || STATUS_COLORS["INSUFFICIENT_HISTORY"];
       // Scale radius logarithmically between 5px and 13px based on detection count
       const radius = Math.min(13, Math.max(5, Math.round(4 + Math.log(site.n_detections || 1) * 1.3)));
 
-      const marker = L.circleMarker([site.lat, site.lon], {
+      const markerOptions = {
         radius: radius,
         fillColor: color,
-        color: "#ffffff",
-        weight: 1.5,
-        opacity: 0.9,
+        color: isTargetSimSite ? "#dc2626" : "#ffffff",
+        weight: isTargetSimSite ? 3 : 1.5,
+        opacity: 0.95,
         fillOpacity: 0.85
-      });
+      };
+
+      if (isTargetSimSite) {
+        markerOptions.dashArray = "4, 3";
+      }
+
+      const marker = L.circleMarker([site.lat, site.lon], markerOptions);
+
+      const simBadgeText = isTargetSimSite
+        ? `<br><span style="color:#dc2626; font-weight:800;">[SIMULATED DEMO EVENT]</span>`
+        : "";
 
       const facilityText = site.facility_display_name
         ? `<br><small>🏭 ${escapeHtml(site.facility_display_name)}</small>`
@@ -186,14 +205,23 @@ async function loadSites() {
         <strong>${escapeHtml(site.site_id)}</strong> (${escapeHtml(site.status)})<br>
         ${formatNumber(site.n_detections)} detections
         ${facilityText}
+        ${simBadgeText}
       `, { direction: "top", offset: [0, -radius] });
 
       marker.on("click", () => {
         openSiteDetail(site.site_id, marker);
+        highlightPriorityItem(site.site_id);
       });
 
       marker.addTo(sitesLayer);
+      markersBySiteId[site.site_id] = marker;
     });
+
+    // Re-highlight active marker if one was selected
+    if (activeSiteId && markersBySiteId[activeSiteId]) {
+      activeSiteMarker = markersBySiteId[activeSiteId];
+      activeSiteMarker.setStyle({ weight: 3.5, color: "#000000" });
+    }
   } catch (err) {
     console.error("Failed to load sites:", err);
   }
@@ -262,9 +290,121 @@ async function loadIsolatedDetections() {
 }
 
 // -----------------------------------------------------------------------------
-// 6. Site Detail Panel & 52-Week Chart
+// 6. Priority / Anomaly List (T12)
+// -----------------------------------------------------------------------------
+async function loadPriorityList() {
+  try {
+    const url = isSimulated ? "/api/risk?include_simulated=1" : "/api/risk";
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    riskData = await res.json();
+
+    const countPill = document.getElementById("priority-count-pill");
+    const simSuffix = isSimulated ? " [1 SIMULATED]" : "";
+    countPill.textContent = `${riskData.length} sites${simSuffix}`;
+
+    renderPriorityList(riskData);
+  } catch (err) {
+    console.error("Failed to load priority list:", err);
+  }
+}
+
+function renderPriorityList(items) {
+  const container = document.getElementById("priority-list");
+  if (!items || items.length === 0) {
+    container.innerHTML = '<div class="no-items-msg">No matching anomalous sites.</div>';
+    return;
+  }
+
+  let html = "";
+  items.forEach(item => {
+    const isSim = Boolean(item.is_simulated);
+    const prioClass = `prio-${item.priority}`;
+    const simClass = isSim ? "simulated-item" : "";
+    const activeClass = item.site_id === activeSiteId ? "active" : "";
+
+    const facilityDisplay = item.facility_display_name
+      ? escapeHtml(item.facility_display_name)
+      : '<span class="unmapped">Unmapped facility</span>';
+
+    const simPill = isSim ? '<span class="sim-tag">[SIMULATED]</span>' : "";
+
+    html += `
+      <div class="priority-item ${prioClass} ${simClass} ${activeClass}"
+           data-site-id="${escapeHtml(item.site_id)}"
+           data-lat="${item.lat}"
+           data-lon="${item.lon}">
+        <div class="priority-top-row">
+          <div class="priority-rank-site">
+            <span class="priority-rank">#${item.rank}</span>
+            <span class="priority-site-id">${escapeHtml(item.site_id)}</span>
+          </div>
+          <div class="priority-pills">
+            ${simPill}
+            <span class="prio-tag status-${item.priority}">${escapeHtml(item.priority)}</span>
+            <span class="score-tag">${item.score} pts</span>
+          </div>
+        </div>
+        <div class="priority-facility">${facilityDisplay}</div>
+        <div class="priority-reason">${escapeHtml(item.top_reason)}</div>
+      </div>
+    `;
+  });
+
+  container.innerHTML = html;
+
+  // Bind click listeners to all items
+  container.querySelectorAll(".priority-item").forEach(card => {
+    card.addEventListener("click", () => {
+      const sid = card.getAttribute("data-site-id");
+      const lat = parseFloat(card.getAttribute("data-lat"));
+      const lon = parseFloat(card.getAttribute("data-lon"));
+
+      // Focus map to site coordinates
+      map.flyTo([lat, lon], 12, { duration: 1.0 });
+
+      // Open site panel
+      const marker = markersBySiteId[sid];
+      openSiteDetail(sid, marker);
+      highlightPriorityItem(sid);
+    });
+  });
+}
+
+function highlightPriorityItem(siteId) {
+  document.querySelectorAll(".priority-item").forEach(card => {
+    if (card.getAttribute("data-site-id") === siteId) {
+      card.classList.add("active");
+      card.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    } else {
+      card.classList.remove("active");
+    }
+  });
+}
+
+function filterPriorityList() {
+  const query = document.getElementById("priority-search-input").value.trim().toLowerCase();
+  if (!query) {
+    renderPriorityList(riskData);
+    return;
+  }
+
+  const filtered = riskData.filter(item => {
+    const sid = (item.site_id || "").toLowerCase();
+    const fac = (item.facility_display_name || "").toLowerCase();
+    const prio = (item.priority || "").toLowerCase();
+    const reason = (item.top_reason || "").toLowerCase();
+    return sid.includes(query) || fac.includes(query) || prio.includes(query) || reason.includes(query);
+  });
+
+  renderPriorityList(filtered);
+}
+
+// -----------------------------------------------------------------------------
+// 7. Site Detail Panel & 52-Week Chart
 // -----------------------------------------------------------------------------
 async function openSiteDetail(siteId, marker) {
+  activeSiteId = siteId;
   const panel = document.getElementById("site-panel");
   const placeholder = document.getElementById("panel-placeholder");
   const content = document.getElementById("panel-content");
@@ -273,17 +413,23 @@ async function openSiteDetail(siteId, marker) {
   placeholder.style.display = "none";
   content.style.display = "flex";
 
-  // Highlight active marker
+  // Highlight active marker on map
   if (activeSiteMarker && activeSiteMarker !== marker) {
-    activeSiteMarker.setStyle({ weight: 1.5, color: "#ffffff" });
+    const isOldSim = isSimulated && activeSiteMarker._siteId === "TS-0001";
+    activeSiteMarker.setStyle({
+      weight: isOldSim ? 3 : 1.5,
+      color: isOldSim ? "#dc2626" : "#ffffff"
+    });
   }
   activeSiteMarker = marker;
   if (marker) {
+    marker._siteId = siteId;
     marker.setStyle({ weight: 3.5, color: "#000000" });
   }
 
   try {
-    const res = await fetch(`/api/sites/${siteId}`);
+    const url = isSimulated ? `/api/sites/${siteId}?include_simulated=1` : `/api/sites/${siteId}`;
+    const res = await fetch(url);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
 
@@ -393,18 +539,25 @@ function renderSiteDetail(data) {
   if (anomalies.length > 0) {
     let anomHtml = '<div class="anomalies-list">';
     anomalies.forEach(anom => {
+      const isSim = Boolean(anom.is_simulated);
       const prioClass = `prio-${anom.priority}`;
+      const simClass = isSim ? "simulated-item" : "";
       const reasons = Array.isArray(anom.reasons) ? anom.reasons : [];
       let reasonsListHtml = "";
       reasons.forEach(r => {
         reasonsListHtml += `<li>${escapeHtml(r)}</li>`;
       });
 
+      const simHeaderBadge = isSim ? '<span class="sim-tag" style="margin-right:4px;">[SIMULATED]</span>' : "";
+
       anomHtml += `
-        <div class="anomaly-item ${prioClass}">
+        <div class="anomaly-item ${prioClass} ${simClass}">
           <div class="anomaly-header">
             <span class="anomaly-period">Week ${anom.week_index} (${escapeHtml(anom.week_start)} – ${escapeHtml(anom.week_end)})</span>
-            <span class="anomaly-badge status-${anom.priority}">${escapeHtml(anom.priority)} · ${anom.score} pts</span>
+            <div>
+              ${simHeaderBadge}
+              <span class="anomaly-badge status-${anom.priority}">${escapeHtml(anom.priority)} · ${anom.score} pts</span>
+            </div>
           </div>
           <ul class="reasons-list">
             ${reasonsListHtml}
@@ -432,7 +585,7 @@ function renderSiteDetail(data) {
 }
 
 // -----------------------------------------------------------------------------
-// 7. Render 52-Week FRP Chart with Chart.js
+// 8. Render 52-Week FRP Chart with Chart.js
 // -----------------------------------------------------------------------------
 function renderWeeklyChart(weekly, baseline, anomalies) {
   const ctx = document.getElementById("weekly-chart").getContext("2d");
@@ -448,11 +601,20 @@ function renderWeeklyChart(weekly, baseline, anomalies) {
     anomalyByWeek[a.week_index] = a;
   });
 
-  const labels = weekly.map(w => `W${w.week_index}`);
+  const labels = weekly.map(w => {
+    if (w.is_simulated || w.week_index === 52) {
+      return "W52 [SIM]";
+    }
+    return `W${w.week_index}`;
+  });
+
   const frpData = weekly.map(w => Number(w.frp_sum.toFixed(1)));
 
-  // Color each bar based on baseline vs monitoring vs anomaly
+  // Color each bar based on baseline vs monitoring vs anomaly vs simulation
   const barColors = weekly.map(w => {
+    if (w.is_simulated || w.week_index === 52) {
+      return "#dc2626"; // Bright red for simulated week
+    }
     if (anomalyByWeek[w.week_index]) {
       const p = anomalyByWeek[w.week_index].priority;
       if (p === "HIGH") return "#d62728";
@@ -513,7 +675,8 @@ function renderWeeklyChart(weekly, baseline, anomalies) {
             title: function (items) {
               const idx = items[0].dataIndex;
               const w = weekly[idx];
-              return `Week ${w.week_index} (${w.week_start} – ${w.week_end})`;
+              const simTag = (w.is_simulated || w.week_index === 52) ? " [SIMULATED DEMO EVENT]" : "";
+              return `Week ${w.week_index} (${w.week_start} – ${w.week_end})${simTag}`;
             },
             label: function (item) {
               if (item.dataset.type === "line") {
@@ -521,7 +684,9 @@ function renderWeeklyChart(weekly, baseline, anomalies) {
               }
               const w = weekly[item.dataIndex];
               let text = `FRP Sum: ${item.formattedValue} MW (${w.detection_count} detections)`;
-              if (anomalyByWeek[w.week_index]) {
+              if (w.is_simulated || w.week_index === 52) {
+                text += " [SIMULATED HIGH ANOMALY]";
+              } else if (anomalyByWeek[w.week_index]) {
                 text += ` [${anomalyByWeek[w.week_index].priority} Anomaly]`;
               }
               return text;
@@ -535,7 +700,7 @@ function renderWeeklyChart(weekly, baseline, anomalies) {
             display: false
           },
           ticks: {
-            maxTicksLimit: 12,
+            maxTicksLimit: 14,
             font: {
               size: 10
             }
@@ -562,20 +727,111 @@ function renderWeeklyChart(weekly, baseline, anomalies) {
 }
 
 // -----------------------------------------------------------------------------
-// 8. Event Listeners & Startup
+// 9. Simulation Toggle Controls (T12)
+// -----------------------------------------------------------------------------
+function setSimulationState(enabled) {
+  isSimulated = enabled;
+
+  const toggleBtn = document.getElementById("toggle-sim-btn");
+  const toggleLabel = document.getElementById("sim-toggle-label");
+  const banner = document.getElementById("sim-banner");
+  const chartSimNote = document.getElementById("chart-sim-note");
+
+  if (isSimulated) {
+    toggleBtn.classList.add("active");
+    toggleLabel.textContent = "Demo Simulation: ON";
+    banner.style.display = "block";
+    if (chartSimNote) chartSimNote.style.display = "inline";
+  } else {
+    toggleBtn.classList.remove("active");
+    toggleLabel.textContent = "Demo Simulation: OFF";
+    banner.style.display = "none";
+    if (chartSimNote) chartSimNote.style.display = "none";
+  }
+
+  // Reload all dynamic components with the new include_simulated state
+  loadDashboardCounts();
+  loadSites();
+  loadPriorityList();
+
+  // If a site detail panel is currently open, refresh its data
+  if (activeSiteId) {
+    const marker = markersBySiteId[activeSiteId];
+    openSiteDetail(activeSiteId, marker);
+  }
+}
+
+// -----------------------------------------------------------------------------
+// 10. About & Methodology Modal (T12)
+// -----------------------------------------------------------------------------
+function initAboutModal() {
+  const modal = document.getElementById("about-modal");
+  const openBtn = document.getElementById("about-btn");
+  const closeBtn = document.getElementById("close-about-btn");
+  const dismissBtn = document.getElementById("modal-dismiss-btn");
+
+  const openModal = () => {
+    modal.style.display = "flex";
+  };
+  const closeModal = () => {
+    modal.style.display = "none";
+  };
+
+  openBtn.addEventListener("click", openModal);
+  closeBtn.addEventListener("click", closeModal);
+  dismissBtn.addEventListener("click", closeModal);
+
+  // Close modal when clicking backdrop outside card
+  modal.addEventListener("click", (e) => {
+    if (e.target === modal) {
+      closeModal();
+    }
+  });
+
+  // Close on Escape key
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && modal.style.display === "flex") {
+      closeModal();
+    }
+  });
+}
+
+// -----------------------------------------------------------------------------
+// 11. Event Listeners & Startup
 // -----------------------------------------------------------------------------
 document.addEventListener("DOMContentLoaded", () => {
   initMap();
   loadDashboardCounts();
   loadSites();
   loadFacilities();
+  loadPriorityList();
+  initAboutModal();
 
-  // Close panel button
+  // Search input in priority list
+  document.getElementById("priority-search-input").addEventListener("input", filterPriorityList);
+
+  // Simulation toggle button in header
+  document.getElementById("toggle-sim-btn").addEventListener("click", () => {
+    setSimulationState(!isSimulated);
+  });
+
+  // Turn off button in persistent banner
+  document.getElementById("sim-banner-off-btn").addEventListener("click", () => {
+    setSimulationState(false);
+  });
+
+  // Close site detail panel button
   document.getElementById("close-panel-btn").addEventListener("click", () => {
     document.getElementById("site-panel").classList.add("closed");
     if (activeSiteMarker) {
-      activeSiteMarker.setStyle({ weight: 1.5, color: "#ffffff" });
+      const isTargetSim = isSimulated && activeSiteId === "TS-0001";
+      activeSiteMarker.setStyle({
+        weight: isTargetSim ? 3 : 1.5,
+        color: isTargetSim ? "#dc2626" : "#ffffff"
+      });
       activeSiteMarker = null;
     }
+    activeSiteId = null;
+    document.querySelectorAll(".priority-item").forEach(card => card.classList.remove("active"));
   });
 });

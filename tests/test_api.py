@@ -26,6 +26,7 @@ from processing.config import (
     DB_PATH,
     EXPECTED_DETECTIONS,
     EXPECTED_FACILITIES,
+    SIM_N_DETECTIONS,
 )
 
 
@@ -143,8 +144,8 @@ class ThermographApiTestCase(unittest.TestCase):
 
         self.assertTrue(data["simulated_included"])
         counts = data["counts"]
-        # Total detections includes 6 simulated detections (21,513 + 6 = 21,519)
-        self.assertEqual(counts["detections"], EXPECTED_DETECTIONS + 6)
+        # Total detections includes simulated detections (EXPECTED_DETECTIONS + SIM_N_DETECTIONS)
+        self.assertEqual(counts["detections"], EXPECTED_DETECTIONS + SIM_N_DETECTIONS)
         # Anomalous sites count includes the simulated event site TS-0001 (123 + 1 = 124)
         self.assertEqual(counts["anomalous_sites"], 124)
         # Real status distribution in sites table remains unchanged

@@ -51,6 +51,9 @@ from processing.config import (
     RAW_FIRMS_DIR,
     RAW_OSM_FILE,
     ROOT,
+    SIM_CSV,
+    SIM_N_DETECTIONS,
+    SIM_WEEK,
     SITE_EXTENT_REVIEW_KM,
     SITE_WEEKLY_EXPORT_CSV,
     SITES_EXPORT_CSV,
@@ -1134,17 +1137,25 @@ def check_anomalies_csv_export() -> bool:
     """
     Verify output/exports/anomalies.csv:
     - File exists
-    - Exactly 160 data rows
+    - Exactly 160 real data rows (or 161 if simulated event present)
     - Required columns present
     - Spot-check: TS-0035 week 40 has score=7 and priority=HIGH
+    - If simulated row present: is_simulated=1, reasons prefixed with [SIMULATED]
     """
     if not ANOMALIES_EXPORT_CSV.exists():
         print(f"[FAIL] anomalies.csv missing at {ANOMALIES_EXPORT_CSV}")
         return False
 
     df = pd.read_csv(ANOMALIES_EXPORT_CSV)
-    if len(df) != 160:
-        print(f"[FAIL] anomalies.csv expected 160 rows, found {len(df)}")
+    real_count = int((df["is_simulated"] == 0).sum())
+    sim_count = int((df["is_simulated"] == 1).sum())
+
+    if real_count != 160:
+        print(f"[FAIL] anomalies.csv expected 160 real rows, found {real_count}")
+        return False
+
+    if len(df) not in (160, 161):
+        print(f"[FAIL] anomalies.csv unexpected row count: {len(df)} (expected 160 or 161)")
         return False
 
     expected_cols = [
@@ -1168,9 +1179,165 @@ def check_anomalies_csv_export() -> bool:
         print(f"[FAIL] anomalies.csv TS-0035 week 40 unexpected values: score={spot_row['score']}, prio={spot_row['priority']}")
         return False
 
+    if sim_count == 1:
+        sim_row = df[df["is_simulated"] == 1].iloc[0]
+        sim_reasons = json.loads(sim_row["reasons"])
+        if not all(r.startswith("[SIMULATED]") for r in sim_reasons):
+            print(f"[FAIL] anomalies.csv simulated row reasons do not all start with [SIMULATED]: {sim_reasons}")
+            return False
+
     print(
-        f"[PASS] anomalies.csv verified: {len(df):,} data rows, all columns present, "
-        f"TS-0035 week 40 spot-checked with score=7, priority=HIGH."
+        f"[PASS] anomalies.csv verified: {len(df):,} data rows ({real_count} real, {sim_count} simulated), "
+        f"all columns present, TS-0035 week 40 spot-checked with score=7, priority=HIGH."
+    )
+    return True
+
+
+def check_c14(conn: sqlite3.Connection) -> bool:
+    """
+    Check C14:
+    - No simulated row exists with week_index < 52 (in detections, site_weekly, anomalies).
+    - Simulated records are marked is_simulated = 1.
+    - Simulated detections belong to week 52.
+    - Exactly SIM_N_DETECTIONS (12) simulated detections are generated.
+    - Simulated anomaly genuinely exceeds its baseline threshold (frp_sum > threshold).
+    - Simulated anomaly has score = 6 and priority = HIGH.
+    - Simulated anomaly has exactly 3 reasons, all prefixed with '[SIMULATED]'.
+    - Real site statuses are unchanged by simulation (30 NORMAL, 10 HIGH, 113 LOW, 415 INSUFFICIENT_HISTORY).
+    - Real baseline and monitoring data remain unchanged.
+    """
+    cursor = conn.cursor()
+
+    # 1. Detections checks
+    cursor.execute("SELECT COUNT(*) FROM detections WHERE is_simulated = 1;")
+    sim_det_count = cursor.fetchone()[0]
+
+    cursor.execute("SELECT COUNT(*) FROM detections WHERE is_simulated = 1 AND week_index < 52;")
+    early_sim_dets = cursor.fetchone()[0]
+
+    cursor.execute("SELECT COUNT(*) FROM detections WHERE is_simulated = 1 AND week_index != ?;", (SIM_WEEK,))
+    non_w52_sim_dets = cursor.fetchone()[0]
+
+    if sim_det_count != SIM_N_DETECTIONS:
+        print(f"[FAIL] C14: Expected {SIM_N_DETECTIONS} simulated detections, found {sim_det_count}")
+        return False
+
+    if early_sim_dets > 0 or non_w52_sim_dets > 0:
+        print(f"[FAIL] C14: Found simulated detections outside week 52 (early: {early_sim_dets}, non-52: {non_w52_sim_dets})")
+        return False
+
+    # 2. site_weekly checks
+    cursor.execute("SELECT COUNT(*) FROM site_weekly WHERE is_simulated = 1;")
+    sim_weekly_count = cursor.fetchone()[0]
+
+    cursor.execute("SELECT COUNT(*) FROM site_weekly WHERE is_simulated = 1 AND week_index < 52;")
+    early_sim_weekly = cursor.fetchone()[0]
+
+    if sim_weekly_count != 1 or early_sim_weekly > 0:
+        print(f"[FAIL] C14: Expected 1 simulated site_weekly row in week 52, found total={sim_weekly_count}, early={early_sim_weekly}")
+        return False
+
+    # 3. anomalies checks
+    cursor.execute("""
+    SELECT site_id, anomaly_type, detection_count, frp_sum, threshold, ratio, score, priority, reasons
+    FROM anomalies
+    WHERE is_simulated = 1;
+    """)
+    sim_anom_rows = cursor.fetchall()
+
+    cursor.execute("SELECT COUNT(*) FROM anomalies WHERE is_simulated = 1 AND week_index < 52;")
+    early_sim_anoms = cursor.fetchone()[0]
+
+    if len(sim_anom_rows) != 1 or early_sim_anoms > 0:
+        print(f"[FAIL] C14: Expected 1 simulated anomaly in week 52, found total={len(sim_anom_rows)}, early={early_sim_anoms}")
+        return False
+
+    sim_anom = sim_anom_rows[0]
+    # Verify simulated anomaly genuinely exceeds its baseline threshold
+    if sim_anom["anomaly_type"] != "BASELINE_EXCEEDANCE":
+        print(f"[FAIL] C14: Simulated anomaly expected BASELINE_EXCEEDANCE, found '{sim_anom['anomaly_type']}'")
+        return False
+
+    if sim_anom["frp_sum"] <= sim_anom["threshold"]:
+        print(f"[FAIL] C14: Simulated anomaly frp_sum ({sim_anom['frp_sum']} MW) <= threshold ({sim_anom['threshold']} MW)")
+        return False
+
+    # Verify score 6 / HIGH
+    if sim_anom["score"] != 6 or sim_anom["priority"] != "HIGH":
+        print(f"[FAIL] C14: Simulated anomaly expected score=6 and priority=HIGH, found score={sim_anom['score']}, priority={sim_anom['priority']}")
+        return False
+
+    # Verify the three [SIMULATED] reasons
+    sim_reasons = json.loads(sim_anom["reasons"])
+    if len(sim_reasons) != 3:
+        print(f"[FAIL] C14: Simulated anomaly expected 3 reasons, found {len(sim_reasons)}: {sim_reasons}")
+        return False
+
+    if not all(r.startswith("[SIMULATED]") for r in sim_reasons):
+        print(f"[FAIL] C14: Simulated reasons do not all start with [SIMULATED]: {sim_reasons}")
+        return False
+
+    # 4. Real site statuses unchanged
+    cursor.execute("SELECT status, COUNT(*) FROM sites GROUP BY status;")
+    status_counts = dict(cursor.fetchall())
+    expected_statuses = {
+        "NORMAL": 30,
+        "HIGH": 10,
+        "LOW": 113,
+        "INSUFFICIENT_HISTORY": 415,
+    }
+    for st, exp_c in expected_statuses.items():
+        act_c = status_counts.get(st, 0)
+        if act_c != exp_c:
+            print(f"[FAIL] C14: Status '{st}' count changed after simulation: expected {exp_c}, found {act_c}")
+            return False
+
+    # Verify simulation target site status remains NORMAL
+    cursor.execute("SELECT value FROM metadata WHERE key = 'simulated_target_site_id';")
+    row = cursor.fetchone()
+    if row:
+        target_sid = row[0]
+        cursor.execute("SELECT status FROM sites WHERE site_id = ?;", (target_sid,))
+        target_status = cursor.fetchone()[0]
+        if target_status != "NORMAL":
+            print(f"[FAIL] C14: Simulation target site {target_sid} status changed to {target_status} (must remain NORMAL)")
+            return False
+
+    print(
+        f"[PASS] C14: no simulated row has week_index < 52; exactly {sim_det_count} simulated detections in week {SIM_WEEK}; "
+        f"1 simulated weekly record and 1 simulated anomaly (genuine exceedance: {sim_anom['frp_sum']:.1f} MW > {sim_anom['threshold']:.1f} MW, score=6, priority=HIGH, 3 reasons); "
+        f"real statuses completely unchanged ({status_counts})."
+    )
+    return True
+
+
+def check_simulated_detections_csv_export() -> bool:
+    """
+    Verify output/simulated/simulated_detections.csv:
+    - File exists
+    - Exactly SIM_N_DETECTIONS (12) rows
+    - All rows have is_simulated = 1 and week_index = 52
+    """
+    if not SIM_CSV.exists():
+        print(f"[FAIL] simulated_detections.csv missing at {SIM_CSV}")
+        return False
+
+    df = pd.read_csv(SIM_CSV)
+    if len(df) != SIM_N_DETECTIONS:
+        print(f"[FAIL] simulated_detections.csv expected {SIM_N_DETECTIONS} rows, found {len(df)}")
+        return False
+
+    if (df["is_simulated"] != 1).any():
+        print("[FAIL] simulated_detections.csv contains rows with is_simulated != 1")
+        return False
+
+    if (df["week_index"] != SIM_WEEK).any():
+        print(f"[FAIL] simulated_detections.csv contains rows with week_index != {SIM_WEEK}")
+        return False
+
+    print(
+        f"[PASS] simulated_detections.csv verified: {len(df)} rows, all with is_simulated=1, "
+        f"week_index={SIM_WEEK}, FRP={df['frp'].iloc[0]} MW."
     )
     return True
 
@@ -1205,9 +1372,48 @@ def print_stage_7_info(conn: sqlite3.Connection) -> None:
     print("-" * 60 + "\n")
 
 
+def print_stage_8_info(conn: sqlite3.Connection) -> None:
+    """
+    Print informative metrics for Stage 8 (simulation).
+    """
+    cursor = conn.cursor()
+    print("-" * 60)
+    print("STAGE 8 INFORMATIVE SUMMARY (SIMULATED EVENT)")
+    print("-" * 60)
+
+    cursor.execute("SELECT value FROM metadata WHERE key = 'simulated_target_site_id';")
+    target_row = cursor.fetchone()
+    target_sid = target_row[0] if target_row else "N/A"
+
+    cursor.execute("""
+    SELECT s.site_id, s.site_class, s.status, f.display_name,
+           a.detection_count, a.frp_sum, a.frp_max, a.score, a.priority, a.reasons
+    FROM anomalies a
+    JOIN sites s ON a.site_id = s.site_id
+    LEFT JOIN facilities f ON s.facility_id = f.facility_id
+    WHERE a.is_simulated = 1;
+    """)
+    row = cursor.fetchone()
+    if row:
+        reasons_list = json.loads(row["reasons"])
+        print(f"Simulated Site:             {row['site_id']} ({row['display_name']})")
+        print(f"Site Class:                 {row['site_class']}")
+        print(f"Real Status Preserved:      {row['status']}")
+        print(f"Simulated Week:             Week {SIM_WEEK} (1–7 Jul 2026)")
+        print(f"Simulated Detections:       {row['detection_count']}")
+        print(f"Simulated FRP Sum:          {row['frp_sum']:.1f} MW (Max: {row['frp_max']:.1f} MW)")
+        print(f"Simulated Anomaly Priority: {row['priority']} (Score: {row['score']})")
+        print("Simulated Explanations:")
+        for r in reasons_list:
+            print(f"  • {r}")
+    else:
+        print("No simulated event found.")
+    print("-" * 60 + "\n")
+
+
 def main() -> None:
     print("=" * 60)
-    print("THERMOGRAPH Output Verification — Stages T1–T7")
+    print("THERMOGRAPH Output Verification — Stages T1–T9")
     print("=" * 60)
 
     conn = get_db_connection()
@@ -1245,18 +1451,23 @@ def main() -> None:
         results.append(check_c13(conn))
         results.append(check_anomalies_csv_export())
 
+        # Stage 8 checks (C14 and simulated CSV)
+        results.append(check_c14(conn))
+        results.append(check_simulated_detections_csv_export())
+
         # Summaries
         print_stage_2_info(conn)
         print_stage_4_info(conn)
         print_stage_5_info(conn)
         print_stage_6_info(conn)
         print_stage_7_info(conn)
+        print_stage_8_info(conn)
     finally:
         conn.close()
 
     print("=" * 60)
     if all(results):
-        print("ALL ACTIVE VERIFICATION CHECKS PASSED (C1–C13, C15, Exports).")
+        print("ALL ACTIVE VERIFICATION CHECKS PASSED (C1–C15, Exports).")
         print("=" * 60)
         sys.exit(0)
     else:

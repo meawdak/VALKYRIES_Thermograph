@@ -20,8 +20,13 @@ from processing.config import (
     DATASET_END,
     DB_PATH,
     EXPECTED_DETECTIONS,
+    EXPECTED_FACILITIES,
     EXPORT_DIR,
+    FACILITIES_EXPORT_CSV,
     LEGACY_SITES_CSV,
+    MATCH_RADIUS_KM,
+    MATCH_RADIUS_M,
+    MATCHED_SITES_CSV,
     RAW_DATA_FILE_COUNT,
     RAW_DATA_TOTAL_BYTES,
     RAW_PAYLOAD_FILE_COUNT,
@@ -30,6 +35,7 @@ from processing.config import (
     RAW_OSM_FILE,
     ROOT,
     SITE_EXTENT_REVIEW_KM,
+    SITES_EXPORT_CSV,
 )
 
 
@@ -336,6 +342,169 @@ def check_sites_csv_export() -> bool:
     return True
 
 
+def check_c6(conn: sqlite3.Connection) -> bool:
+    """
+    Check C6: facilities (OSM) = 710 in database.
+    """
+    cursor = conn.cursor()
+    cursor.execute("SELECT COUNT(*) FROM facilities;")
+    count = cursor.fetchone()[0]
+    if count == EXPECTED_FACILITIES:
+        print(f"[PASS] C6: facilities = {EXPECTED_FACILITIES:,} (found {count:,})")
+        return True
+    else:
+        print(f"[FAIL] C6: Expected {EXPECTED_FACILITIES:,} facilities, found {count:,}")
+        return False
+
+
+def check_c7(conn: sqlite3.Connection) -> bool:
+    """
+    Check C7:
+    - Every site has match_type in {'inside', 'nearby', 'none'}.
+    - Nearby distances <= MATCH_RADIUS_M (1,000 m).
+    - Inside distances == 0.
+    - None (unmapped) has facility_id IS NULL and match_distance_m IS NULL.
+    - Inside and nearby have facility_id IS NOT NULL.
+    All counts are computed dynamically from data without hard-coding expected counts.
+    """
+    cursor = conn.cursor()
+    cursor.execute("SELECT site_id, facility_id, match_type, match_distance_m FROM sites;")
+    rows = cursor.fetchall()
+
+    if len(rows) == 0:
+        print("[FAIL] C7: sites table is empty.")
+        return False
+
+    n_inside = 0
+    n_nearby = 0
+    n_none = 0
+    invalid_rows = []
+
+    for r in rows:
+        mtype = r["match_type"]
+        fid = r["facility_id"]
+        dist = r["match_distance_m"]
+
+        if mtype not in ("inside", "nearby", "none"):
+            invalid_rows.append((r["site_id"], f"invalid match_type: {mtype}"))
+            continue
+
+        if mtype == "inside":
+            n_inside += 1
+            if fid is None or dist != 0:
+                invalid_rows.append((r["site_id"], f"inside invariant violated: fid={fid}, dist={dist}"))
+        elif mtype == "nearby":
+            n_nearby += 1
+            if fid is None or dist is None or dist > MATCH_RADIUS_M:
+                invalid_rows.append((r["site_id"], f"nearby invariant violated: fid={fid}, dist={dist}"))
+        elif mtype == "none":
+            n_none += 1
+            if fid is not None or dist is not None:
+                invalid_rows.append((r["site_id"], f"none invariant violated: fid={fid}, dist={dist}"))
+
+    if invalid_rows:
+        print(f"[FAIL] C7: {len(invalid_rows)} sites violated matching constraints: {invalid_rows[:5]}")
+        return False
+
+    print(
+        f"[PASS] C7: all {len(rows):,} sites have valid match constraints "
+        f"(dynamically evaluated: {n_nearby:,} nearby [all <= {MATCH_RADIUS_M} m], "
+        f"{n_inside:,} inside, {n_none:,} none [all with NULL facility_id])."
+    )
+    return True
+
+
+def check_facilities_csv_export() -> bool:
+    """
+    Verify output/exports/facilities.csv:
+    - File exists
+    - Exactly 710 data rows
+    - All rows have facility_id and display_name
+    """
+    if not FACILITIES_EXPORT_CSV.exists():
+        print(f"[FAIL] facilities.csv missing at {FACILITIES_EXPORT_CSV}")
+        return False
+
+    df = pd.read_csv(FACILITIES_EXPORT_CSV)
+    if len(df) != EXPECTED_FACILITIES:
+        print(f"[FAIL] facilities.csv expected {EXPECTED_FACILITIES} rows, found {len(df)}")
+        return False
+
+    missing_name = df["display_name"].isna().sum()
+    missing_id = df["facility_id"].isna().sum()
+
+    if missing_name > 0 or missing_id > 0:
+        print(f"[FAIL] facilities.csv contains missing ids ({missing_id}) or display names ({missing_name})")
+        return False
+
+    print(f"[PASS] facilities.csv verified: {len(df):,} data rows, all with valid display_name and facility_id.")
+    return True
+
+
+def check_matched_sites_csv() -> bool:
+    """
+    Verify output/thermal_sites_matched.csv:
+    - File exists
+    - Exactly 568 data rows
+    - Contains required fields
+    - Dynamically evaluates that all MATCHED sites have distance <= 1.0 km and non-null facility_id
+    - Dynamically evaluates that all UNMAPPED sites have null facility_id (no arbitrary facility assigned)
+    """
+    if not MATCHED_SITES_CSV.exists():
+        print(f"[FAIL] Matched sites CSV missing at {MATCHED_SITES_CSV}")
+        return False
+
+    df = pd.read_csv(MATCHED_SITES_CSV)
+    if len(df) != 568:
+        print(f"[FAIL] thermal_sites_matched.csv expected 568 rows, found {len(df)}")
+        return False
+
+    required_cols = [
+        "site_id", "latitude", "longitude", "detection_count",
+        "active_dates", "first_seen", "last_seen", "mean_frp", "max_frp",
+        "facility_id", "facility_name", "facility_distance_km",
+        "match_status",
+    ]
+    missing_cols = [c for c in required_cols if c not in df.columns]
+    if missing_cols:
+        print(f"[FAIL] thermal_sites_matched.csv missing required columns: {missing_cols}")
+        return False
+
+    matched_mask = df["match_status"] == "MATCHED"
+    unmapped_mask = df["match_status"] == "UNMAPPED"
+
+    n_matched = int(matched_mask.sum())
+    n_unmapped = int(unmapped_mask.sum())
+
+    if n_matched + n_unmapped != len(df):
+        print(f"[FAIL] thermal_sites_matched.csv contains unknown match_status values.")
+        return False
+
+    # Dynamic validation for matched sites
+    matched_df = df[matched_mask]
+    if n_matched > 0:
+        if matched_df["facility_id"].isna().any():
+            print("[FAIL] Matched site has NULL facility_id.")
+            return False
+        max_matched_dist = matched_df["facility_distance_km"].max()
+        if max_matched_dist > MATCH_RADIUS_KM:
+            print(f"[FAIL] Matched site exceeded {MATCH_RADIUS_KM} km threshold: {max_matched_dist:.4f} km")
+            return False
+
+    # Dynamic validation for unmapped sites
+    unmapped_df = df[unmapped_mask]
+    if n_unmapped > 0:
+        if unmapped_df["facility_id"].notna().any():
+            print("[FAIL] Unmapped site has an assigned facility_id (arbitrary identity assigned).")
+            return False
+
+    print(
+        f"[PASS] thermal_sites_matched.csv verified: {len(df):,} data rows "
+        f"(dynamically observed: {n_matched} MATCHED [all <= {MATCH_RADIUS_KM:.1f} km], {n_unmapped} UNMAPPED [no arbitrary IDs assigned])."
+    )
+    return True
+
+
 def print_stage_2_info(conn: sqlite3.Connection) -> None:
     """
     Print informative metrics per TECH_SPEC §10 (legacy vs new, extent > 5 km, top sites).
@@ -386,15 +555,53 @@ def print_stage_2_info(conn: sqlite3.Connection) -> None:
     print("-" * 60 + "\n")
 
 
+def print_stage_4_info(conn: sqlite3.Connection) -> None:
+    """
+    Print informative metrics for Stage 3 & 4 (OSM facility matching).
+    """
+    cursor = conn.cursor()
+    print("-" * 60)
+    print("STAGE 3 & 4 INFORMATIVE SUMMARY (FACILITY MATCHING)")
+    print("-" * 60)
+
+    cursor.execute("SELECT COUNT(*) FROM facilities;")
+    fac_total = cursor.fetchone()[0]
+
+    cursor.execute("SELECT match_type, COUNT(*) FROM sites GROUP BY match_type;")
+    match_counts = dict(cursor.fetchall())
+
+    cursor.execute("""
+    SELECT s.site_id, s.centroid_lat, s.centroid_lon, s.n_detections, s.match_distance_m,
+           f.facility_id, f.display_name, f.industrial
+    FROM sites s
+    JOIN facilities f ON s.facility_id = f.facility_id
+    WHERE s.match_type IN ('inside', 'nearby')
+    ORDER BY s.n_detections DESC;
+    """)
+    matched_sites = cursor.fetchall()
+
+    print(f"Facilities loaded: {fac_total:,}")
+    print(f"Sites matching breakdown: {match_counts}")
+    print(f"\nTop Matched Thermal Sites (by detections):")
+    for r in matched_sites[:5]:
+        ind_str = f" [industrial={r['industrial']}]" if r["industrial"] else ""
+        print(
+            f"  - {r['site_id']}: {r['n_detections']:,} dets, dist={r['match_distance_m']:.0f} m -> "
+            f"{r['display_name']} ({r['facility_id']}){ind_str}"
+        )
+    print("-" * 60 + "\n")
+
+
 def main() -> None:
     print("=" * 60)
-    print("THERMOGRAPH Output Verification — Stage T2")
+    print("THERMOGRAPH Output Verification — Stages T1–T4")
     print("=" * 60)
 
     conn = get_db_connection()
     results = []
 
     try:
+        # Stage 1 & 2 checks
         results.append(check_c1(conn))
         results.append(check_c2(conn))
         results.append(check_c3(conn))
@@ -403,13 +610,22 @@ def main() -> None:
         results.append(check_c15())
         results.append(check_detections_csv_export())
         results.append(check_sites_csv_export())
+
+        # Stage 3 & 4 checks
+        results.append(check_c6(conn))
+        results.append(check_c7(conn))
+        results.append(check_facilities_csv_export())
+        results.append(check_matched_sites_csv())
+
+        # Summaries
         print_stage_2_info(conn)
+        print_stage_4_info(conn)
     finally:
         conn.close()
 
     print("=" * 60)
     if all(results):
-        print("ALL ACTIVE VERIFICATION CHECKS PASSED (C1–C5, C15).")
+        print("ALL ACTIVE VERIFICATION CHECKS PASSED (C1–C7, C15, Exports).")
         print("=" * 60)
         sys.exit(0)
     else:
@@ -421,3 +637,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+

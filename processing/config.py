@@ -16,6 +16,9 @@ LEGACY_SITES_CSV = ROOT / "output" / "thermal_sites.csv"
 DB_PATH = ROOT / "output" / "thermograph.db"
 EXPORT_DIR = ROOT / "output" / "exports"
 SIM_CSV = ROOT / "output" / "simulated" / "simulated_detections.csv"
+MATCHED_SITES_CSV = ROOT / "output" / "thermal_sites_matched.csv"
+FACILITIES_EXPORT_CSV = EXPORT_DIR / "facilities.csv"
+SITES_EXPORT_CSV = EXPORT_DIR / "sites.csv"
 
 # --- Expected Input Facts (pipeline stops if different) ---
 EXPECTED_DETECTIONS = 21513
@@ -39,6 +42,7 @@ SITE_EXTENT_REVIEW_KM = 5.0
 # --- Facility Matching ---
 PROJECTED_CRS = "EPSG:32643"  # UTM zone 43N, metres (<1% distance distortion in Gujarat)
 MATCH_RADIUS_M = 1000  # 1,000 metres search radius for nearby facilities
+MATCH_RADIUS_KM = MATCH_RADIUS_M / 1000.0  # 1.0 km search radius
 
 # --- Baseline & Anomaly Detection ---
 BASELINE_MIN_ACTIVE_WEEKS = 10  # Minimum active baseline weeks to establish baseline

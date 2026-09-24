@@ -57,7 +57,7 @@ The current proof-of-concept is verified on real historical satellite and geospa
 | **NASA FIRMS Files** | 73 CSV chunks | Located in `data/firms/chunks/` |
 | **Total Detections** | 21,513 records | Cleaned with zero null coordinates or FRP |
 | **OSM Facilities** | 710 features | GeoJSON polygons and points in Gujarat |
-| **Identified Sites | 568 persistent sites | Clustered via DBSCAN (ε = 1.0 km, min_samples = 5) |
+| **Identified Sites** | 568 persistent sites | Clustered via DBSCAN (ε = 1.0 km, min_samples = 5) |
 | **Assigned Detections** | 10,539 detections | Remaining 10,974 preserved as isolated events |
 | **Matched Facilities** | 13 sites | Within 1,000 m buffer (555 unmapped sites) |
 | **Real Anomalies** | 160 anomalies (14 High, 146 Low) | Detected across 123 distinct sites |

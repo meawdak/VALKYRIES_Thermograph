@@ -9,6 +9,10 @@
 **Team:** VALKYRIES  
 **Institution:** Siliguri Institute of Technology, Siliguri, West Bengal
 
+## Prototype link:
+
+[**Open THERMOGRAPH →**](https://valkyries-thermograph.onrender.com/)
+
 ---
 
 ## Overview

@@ -13,6 +13,57 @@
 
 ---
 
+## Setup
+
+THERMOGRAPH is self-contained and requires no external database servers, Docker, or Node.js build tools.
+
+### Prerequisites
+
+- **Python:** Version 3.10 or newer (tested on Python 3.12)
+- **Git**
+
+### Installation & Run Steps
+
+1. **Clone the repository:**
+   ```bash
+   git clone https://github.com/meawdak/VALKYRIES_Thermograph.git
+   cd VALKYRIES_Thermograph
+   ```
+
+2. **Create and activate a Python virtual environment:**
+   ```bash
+   python3 -m venv .venv
+   source .venv/bin/activate
+   # Windows: .venv\Scripts\activate
+   ```
+
+3. **Install dependencies:**
+   ```bash
+   pip install -r requirements.txt
+   ```
+   *(Frontend libraries Leaflet 1.9.4 and Chart.js 4.4.1 are vendored locally in `app/static/vendor/`—no `npm` install is required.)*
+
+4. **Verify data placement:**
+   Ensure source files exist in their expected read-only locations:
+   - FIRMS chunks: `data/firms/chunks/*.csv` (73 files)
+   - OSM dataset: `data/osm_industrial_facilities_gujarat.geojson`
+
+5. **Run the data processing pipeline:**
+   ```bash
+   python processing/run_pipeline.py
+   ```
+   This deterministically loads datasets, performs clustering and facility matching, builds weekly histories and baselines, executes anomaly scoring, generates the simulated demo event, and runs output verification checks (C1–C15).
+
+6. **Start the application server:**
+   ```bash
+   python app/app.py
+   ```
+
+7. **Open the dashboard:**
+   Navigate to `http://127.0.0.1:5000/` in your browser.
+
+---
+
 ## Overview
 
 **THERMOGRAPH** is a geospatial monitoring prototype designed to turn satellite-detected thermal hotspots into location-aware, explainable insights regarding persistent thermal activity around industrial infrastructure.
@@ -64,55 +115,6 @@ The current proof-of-concept is verified on real historical satellite and geospa
 | **Assigned Detections** | 10,539 detections | Remaining 10,974 preserved as isolated events |
 | **Matched Facilities** | 13 sites | Within 1,000 m buffer (555 unmapped sites) |
 | **Real Anomalies** | 160 anomalies (14 High, 146 Low) | Detected across 123 distinct sites |
-
-## Setup
-
-THERMOGRAPH is self-contained and requires no external database servers, Docker, or Node.js build tools.
-
-### Prerequisites
-
-- **Python:** Version 3.10 or newer (tested on Python 3.12)
-- **Git**
-
-### Installation & Run Steps
-
-1. **Clone the repository:**
-   ```bash
-   git clone https://github.com/meawdak/VALKYRIES_Thermograph.git
-   cd VALKYRIES_Thermograph
-   ```
-
-2. **Create and activate a Python virtual environment:**
-   ```bash
-   python3 -m venv .venv
-   source .venv/bin/activate
-   # Windows: .venv\Scripts\activate
-   ```
-
-3. **Install dependencies:**
-   ```bash
-   pip install -r requirements.txt
-   ```
-   *(Frontend libraries Leaflet 1.9.4 and Chart.js 4.4.1 are vendored locally in `app/static/vendor/`—no `npm` install is required.)*
-
-4. **Verify data placement:**
-   Ensure source files exist in their expected read-only locations:
-   - FIRMS chunks: `data/firms/chunks/*.csv` (73 files)
-   - OSM dataset: `data/osm_industrial_facilities_gujarat.geojson`
-
-5. **Run the data processing pipeline:**
-   ```bash
-   python processing/run_pipeline.py
-   ```
-   This deterministically loads datasets, performs clustering and facility matching, builds weekly histories and baselines, executes anomaly scoring, generates the simulated demo event, and runs output verification checks (C1–C15).
-
-6. **Start the application server:**
-   ```bash
-   python app/app.py
-   ```
-
-7. **Open the dashboard:**
-   Navigate to `http://127.0.0.1:5000/` in your browser.
 
 ## Usage
 

@@ -1,428 +1,239 @@
 # THERMOGRAPH
 
-### AI-Based Detection and Classification of Industrial Fires and Persistent Thermal Sources Using NASA FIRMS, OSM & Satellite Data
+> Geospatial monitoring prototype that turns satellite thermal hotspots into location-aware, explainable intelligence on persistent industrial activity.
 
-**Smart India Hackathon 2026**  
-**Problem Statement ID:** 26162  
-**Theme:** Disaster Management  
-**Category:** Software  
-**Team:** VALKYRIES  
-**Institution:** Siliguri Institute of Technology, Siliguri, West Bengal
-
-## Prototype link:
-
-[**Open THERMOGRAPH →**](https://valkyries-thermograph.onrender.com/)
+[![SIH 2026](https://img.shields.io/badge/SIH-2026-blue.svg)](https://www.sih.gov.in/)
+[![Problem Statement 26162](https://img.shields.io/badge/Problem%20Statement-26162-orange.svg)](https://www.sih.gov.in/)
+[![Team VALKYRIES](https://img.shields.io/badge/Team-VALKYRIES%20(147017)-purple.svg)](#team)
+[![Theme: Disaster Management](https://img.shields.io/badge/Theme-Disaster%20Management-red.svg)](#overview)
+[![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-brightgreen.svg)](#setup)
 
 ---
 
 ## Overview
 
-**THERMOGRAPH** is a geospatial monitoring prototype designed to turn satellite-detected thermal hotspots into location-aware and explainable information about persistent thermal activity around industrial facilities.
+**THERMOGRAPH** is a geospatial monitoring prototype designed to turn satellite-detected thermal hotspots into location-aware, explainable insights regarding persistent thermal activity around industrial infrastructure.
 
-NASA FIRMS can detect thermal anomalies, but a hotspot by itself does not explain whether it is associated with an industrial facility, routine thermal activity, agricultural burning, or another source. THERMOGRAPH adds spatial and historical context to those observations.
+Satellite hotspot feeds identify high-temperature anomalies across wide geographic areas, but an isolated detection lacks crucial context. THERMOGRAPH bridges this gap by aggregating thermal history over time, linking observations to mapped facility boundaries, establishing statistical baselines, and flagging meaningful deviations.
 
-The prototype focuses on one core idea:
-
-> **Classify and monitor places, rather than treating every hotspot as an isolated event.**
-
-The system combines:
-
-- **NASA FIRMS / VIIRS** thermal detections
-- **OpenStreetMap (OSM)** industrial facility data
-- Spatial clustering and facility matching
-- Historical thermal behaviour
-- Baseline-based anomaly detection
-- Explainable rule-based prioritisation
-- GIS-based visualisation
-
-The broader project architecture described in the technical report also allows future integration of Sentinel-2, population datasets, additional satellite sources, machine-learning classification, and targeted notifications. Those capabilities are treated as future expansion where they are not yet implemented in the prototype.
-
----
+> *"Classify and monitor places, rather than treating every hotspot as an isolated event."*
 
 ## Problem
 
-Industrial facilities such as refineries, petrochemical complexes, power plants, steel plants, mining sites, and LNG terminals can produce thermal signatures that are visible from space.
+NASA FIRMS detects thermal activity from space with high temporal frequency. However, a raw hotspot coordinate does not inherently explain its origin—routine flare stacks, industrial kiln operations, seasonal agricultural residue burning, and sudden structural fires can produce indistinguishable point observations. Without spatial association and historical baseline tracking, monitoring agencies face alert fatigue and cannot reliably distinguish expected thermal operations from genuine anomalies.
 
-A raw thermal detection does not contain enough context to determine its source. Routine industrial flaring and an unusual thermal event can therefore appear as similar observations in a basic hotspot feed.
-
-THERMOGRAPH addresses this gap by combining:
-
-**Thermal detection → Spatial context → Historical behaviour → Anomaly assessment → Explainable result**
-
-This follows the system workflow described in the project presentation and technical report.
-
----
-
-## Prototype Scope
-
-The current proof-of-concept is intentionally limited to a manageable geographic area and a verified historical dataset.
-
-### Current geographic scope
-
-**Gujarat, India**
-
-### Current datasets
-
-| Dataset | Current prototype data |
-|---|---|
-| NASA FIRMS | 12 months of Gujarat thermal detections |
-| FIRMS files | 73 CSV files |
-| FIRMS detections | 21,513 records |
-| FIRMS period | 1 July 2025 – 30 June 2026 |
-| OpenStreetMap | 710 industrial facility features |
-| OSM format | GeoJSON |
-
-The FIRMS dataset was checked for missing coordinates, missing FRP values, and duplicate rows before processing. The verified dataset contains 21,513 detections, with no missing coordinates, no missing FRP values, and no duplicate rows.
-
-### Current Verified Dataset
-
-The T0 inspection and T1 ingestion stages verified:
-
-- **73** FIRMS CSV files
-- **21,513** FIRMS detections
-- **1 July 2025 – 30 June 2026** coverage
-- **710** OSM industrial facility features
-- **10,539** detections assigned to existing candidate thermal sites
-- **10,974** detections classified as DBSCAN noise/isolated observations in the legacy clustering output
-
-The current dataset is used for prototype development and demonstration. It does not represent a production-scale national monitoring system.
-
-### Why Gujarat?
-
-The prototype uses Gujarat as a focused demonstration region. This keeps processing lightweight while providing enough industrial and thermal activity to demonstrate the complete workflow.
-
-The architecture is designed so that the geographic coverage can be expanded later.
-
----
-
-## How THERMOGRAPH Works
+## How It Works
 
 ```mermaid
 flowchart LR
-    A[NASA FIRMS / VIIRS] --> B[Data Preparation]
-    B --> C[Spatial Clustering]
-    C --> D[Persistent Thermal Sites]
-    D --> E[OSM Facility Matching]
-    E --> F[Historical Baseline]
-    F --> G[Anomaly Detection]
-    G --> H[Explainable Risk / Priority]
-    H --> I[GIS Dashboard]
+    A["FIRMS Detections"] --> B["Data Preparation"]
+    B --> C["Spatial Clustering"]
+    C --> D["Thermal Sites"]
+    D --> E["OSM Matching"]
+    E --> F["Historical Baseline"]
+    F --> G["Anomaly Detection"]
+    G --> H["Explainable Result"]
+    H --> I["GIS Dashboard"]
 ```
 
-### 1. Thermal Detection
+- **FIRMS Detections:** Ingests satellite thermal anomaly observations (MODIS/VIIRS).
+- **Data Preparation:** Normalizes timestamps, validates coordinates and Fire Radiative Power (FRP), and cleans records.
+- **Spatial Clustering:** Groups recurring nearby detections into persistent thermal sites using DBSCAN.
+- **Thermal Sites:** Maintains a persistent site registry rather than tracking fragmented individual hotspots.
+- **OSM Matching:** Associates site centroids with OpenStreetMap industrial facility boundaries within 1,000 metres.
+- **Historical Baseline:** Calculates multi-week statistical profiles (mean and standard deviation of heat output) per site.
+- **Anomaly Detection:** Flags statistically significant baseline exceedances and unexpected new thermal activity.
+- **Explainable Result:** Assigns transparent, rule-based priority scores with plain-English evidence summaries.
+- **GIS Dashboard:** Presents an interactive map displaying sites, facility boundaries, isolated points, and weekly activity trends.
 
-FIRMS observations provide the initial thermal events.
+## Current Prototype
 
-A detection is treated as an observation requiring further context rather than automatically being treated as a confirmed industrial fire. This distinction is important for scientific credibility.
+The current proof-of-concept is verified on real historical satellite and geospatial data for Gujarat, India:
 
-### 2. Data Preparation
+| Metric / Parameter | Verified Prototype Value | Notes |
+|---|---|---|
+| **Geographic Scope** | Gujarat, India | Focused regional demonstration |
+| **Temporal Coverage** | 1 July 2025 – 30 June 2026 | 12 months (52 consecutive weeks) |
+| **NASA FIRMS Files** | 73 CSV chunks | Located in `data/firms/chunks/` |
+| **Total Detections** | 21,513 records | Cleaned with zero null coordinates or FRP |
+| **OSM Facilities** | 710 features | GeoJSON polygons and points in Gujarat |
+| **Identified Sites** | 568 persistent sites | Clustered via DBSCAN ($\epsilon = 1.0\text{ km}$, $\text{min\_samples} = 5$) |
+| **Assigned Detections** | 10,539 detections | Remaining 10,974 preserved as isolated events |
+| **Matched Facilities** | 13 sites | Within 1,000 m buffer (555 unmapped sites) |
+| **Real Anomalies** | 160 anomalies (14 High, 146 Low) | Detected across 123 distinct sites |
 
-The raw observations are combined and checked for:
+## Setup
 
-- Required fields
-- Valid coordinates
-- Valid FRP values
-- Duplicate records
-- Consistent dates and times
+THERMOGRAPH is self-contained and requires no external database servers, Docker, or Node.js build tools.
 
-Raw source files remain unchanged. Processed outputs are stored separately.
-The current prototype stores processed FIRMS detections in a local SQLite database. The T1 ingestion stage loaded all 21,513 verified detections and created a canonical CSV export for downstream processing.
+### Prerequisites
 
-Each detection includes normalized acquisition time, UTC timestamp information, and a week index used by later historical analysis.
+- **Python:** Version 3.10 or newer (tested on Python 3.12)
+- **Git**
 
-### 3. Spatial Clustering
+### Installation & Run Steps
 
-Nearby and repeatedly observed thermal detections are grouped into candidate **thermal sites**.
+1. **Clone the repository:**
+   ```bash
+   git clone https://github.com/meawdak/VALKYRIES_Thermograph.git
+   cd VALKYRIES_Thermograph
+   ```
 
-This is a key part of the prototype because the project is intended to build a registry of persistent thermal sources rather than display thousands of independent hotspot points.
+2. **Create and activate a Python virtual environment:**
+   ```bash
+   python3 -m venv .venv
+   source .venv/bin/activate
+   # Windows: .venv\Scripts\activate
+   ```
 
-### 4. OSM Facility Matching
+3. **Install dependencies:**
+   ```bash
+   pip install -r requirements.txt
+   ```
+   *(Frontend libraries Leaflet 1.9.4 and Chart.js 4.4.1 are vendored locally in `app/static/vendor/`—no `npm` install is required.)*
 
-Candidate thermal sites are compared with the available OSM industrial facilities.
+4. **Verify data placement:**
+   Ensure source files exist in their expected read-only locations:
+   - FIRMS chunks: `data/firms/chunks/*.csv` (73 files)
+   - OSM dataset: `data/osm_industrial_facilities_gujarat.geojson`
 
-A site can be:
+5. **Run the data processing pipeline:**
+   ```bash
+   python processing/run_pipeline.py
+   ```
+   This deterministically loads datasets, performs clustering and facility matching, builds weekly histories and baselines, executes anomaly scoring, generates the simulated demo event, and runs output verification checks (C1–C15).
 
-- **Matched** to a nearby mapped facility
-- **Unmapped / unverified** when there is no sufficiently reliable match
+6. **Start the application server:**
+   ```bash
+   python app/app.py
+   ```
 
-The system should not assign a facility identity when the available evidence does not support it. This follows the human-in-the-loop approach described in the technical report.
-The current Gujarat OSM dataset contains 710 industrial facility features, all represented as Point geometries. Therefore, the prototype uses proximity-based matching rather than polygon containment.
+7. **Open the dashboard:**
+   Navigate to `http://127.0.0.1:5000/` in your browser.
 
-### 5. Historical Baseline
+## Usage
 
-For each persistent thermal site, historical observations are used to describe its normal behaviour.
-
-The prototype uses the available **12-month dataset**. The project's original documentation describes a longer-term 10+ year baseline as a future/full-scale capability, but that historical depth is not part of the current prototype dataset.
-
-### 6. Anomaly Detection
-
-A current observation is compared with the site's historical behaviour.
-
-The prototype uses transparent statistical and rule-based logic so that the reason for an anomaly can be explained to a user.
-
-### 7. Explainable Result
-
-Instead of returning only a score, the system should expose the evidence behind the result, such as:
-
-- Thermal intensity
-- Detection persistence
-- Baseline deviation
-- Facility proximity
-- Available facility context
-
-The technical report explicitly identifies explainability and evidence-backed prioritisation as core design principles.
-
-### 8. GIS Dashboard
-
-The planned dashboard presents thermal sites and their context on an interactive map.
-
-A selected site should provide information such as:
-
-- Location
-- Facility context
-- Historical activity
-- Baseline
-- Current observation
-- Anomaly status
-- Explanation for the result
-
----
-
-## Prototype Intelligence
-
-The prototype deliberately prioritises **transparent, verifiable logic**.
-
-A labelled training dataset is not currently available for training and validating an industrial-fire classification model. Therefore, the prototype should not claim trained ML performance or fabricate model accuracy.
-
-The current implementation direction is:
-
-```text
-Spatial evidence
-       +
-Thermal evidence
-       +
-Temporal evidence
-       ↓
-Rule-based assessment
-       ↓
-Explainable anomaly result
+### 1. Data Processing
+Run the end-to-end processing pipeline to generate `output/thermograph.db` and CSV exports:
+```bash
+python processing/run_pipeline.py
 ```
 
-Machine-learning classification, such as an XGBoost-based classifier described in the project architecture, remains a future upgrade once suitable labelled data is available.
+To run only the verification test suite on existing outputs:
+```bash
+python processing/check_outputs.py
+```
 
----
+To run automated backend API tests:
+```bash
+python tests/test_api.py
+```
 
-## Technology Direction
+### 2. Application & API
+Start the Flask application:
+```bash
+python app/app.py
+```
+Default environment variables: `HOST=0.0.0.0`, `PORT=5000`.
 
-The original technical architecture proposes Python-based processing, geospatial analysis, a Flask API, and a React/Leaflet dashboard.
-
-For the lightweight proof-of-concept, implementation choices may be simplified where they do not affect the scientific workflow.
-
-| Layer | Prototype direction |
-|---|---|
-| Data processing | Python, Pandas |
-| FIRMS ingestion | Python + Pandas |
-| Spatial processing | Python geospatial calculations |
-| Prototype storage | SQLite |
-| Backend API | Flask |
-| Map visualisation | Leaflet |
-| Frontend | Lightweight web interface |
-| Anomaly logic | Statistical + rule-based |
-| Facility data | OpenStreetMap GeoJSON |
-
-A production version can move to a spatial database such as PostGIS and add additional services as the data volume and operational requirements grow.
-
----
+Key REST API endpoints:
+- `GET /` — Interactive GIS web dashboard
+- `GET /api/dashboard` — Regional summary counters and status distribution
+- `GET /api/sites` — List of all 568 thermal sites with classifications
+- `GET /api/sites/<site_id>` — Detail for a site including 52-week activity history
+- `GET /api/anomalies` — List of detected anomalies with plain-English reasons
+- `GET /api/risk` — Ranked list of high-priority sites for inspection
+- `GET /api/facilities` — Mapped OpenStreetMap industrial facilities
 
 ## Repository Structure
 
-The repository is being developed incrementally. The intended structure is:
-
 ```text
 VALKYRIES_Thermograph/
-│
-├── data/                         # Raw FIRMS and OSM source data
-│
-├── processing/                   # Data ingestion and processing scripts
-│   ├── db.py
-│   ├── load_firms.py
-│   ├── check_outputs.py
-│   ├── cluster_firms.py
-│   └── config.py
-│
-├── output/                       # Generated and legacy outputs
-│   └── thermal_sites.csv
-│
-├── docs/                         # Project documentation and reports
-│
-├── AGENTS.md
-├── PRD.md
-├── TECH_SPEC.md
-├── TASKS.md
-├── requirements.txt
-├── README.md
-└── .gitignore
+├── app/
+│   ├── app.py                      # Flask REST API backend & static file server
+│   └── static/
+│       ├── app.js                  # Frontend map, chart, and UI logic
+│       ├── index.html              # Interactive GIS dashboard
+│       ├── style.css               # Dashboard styling
+│       └── vendor/                 # Offline dependencies (Leaflet, Chart.js)
+├── data/                           # Raw source datasets (read-only)
+│   ├── firms/chunks/               # 73 NASA FIRMS CSV chunk files
+│   └── osm_industrial_facilities_gujarat.geojson  # 710 OSM features
+├── docs/
+│   └── INSPECTION_REPORT.md        # Technical data audit & baseline findings
+├── output/                         # Generated artifacts (derived from data/)
+│   ├── exports/                    # CSV exports (sites, baselines, anomalies)
+│   ├── simulated/                  # Synthetic demo detections
+│   ├── thermal_sites.csv           # Legacy baseline clustering reference
+│   ├── thermal_sites_matched.csv   # Matched site registry
+│   └── thermograph.db              # SQLite database generated by pipeline
+├── processing/                     # Data processing pipeline modules
+│   ├── anomalies.py                # Rule-based anomaly detection & scoring
+│   ├── baselines.py                # 39-week baselines & site classification
+│   ├── check_outputs.py            # Verification suite (Checks C1–C15)
+│   ├── cluster_sites.py            # DBSCAN spatial clustering
+│   ├── config.py                   # Central configuration & parameters
+│   ├── db.py                       # SQLite database schema and utilities
+│   ├── load_facilities.py          # OSM GeoJSON ingestion & reprojection
+│   ├── load_firms.py               # FIRMS CSV parsing & validation
+│   ├── match_facilities.py         # Spatial matching to industrial boundaries
+│   ├── run_pipeline.py             # End-to-end pipeline runner
+│   ├── simulate_event.py           # Controlled demonstration event injection
+│   └── site_history.py             # 52-week activity aggregation
+├── tests/
+│   └── test_api.py                 # Automated Flask API tests
+├── AGENTS.md                       # Development guidelines & operational constraints
+├── PRD.md                          # Product Requirements Document
+├── requirements.txt                # Python dependencies
+├── TASKS.md                        # Task implementation tracker
+└── TECH_SPEC.md                    # Technical specifications & schema
 ```
-
-**Note:** Raw datasets should not be modified or overwritten by processing scripts.
-
-Large raw datasets and API credentials should also be kept out of version control where appropriate.
-
----
 
 ## Data Sources
 
-### NASA FIRMS
+- **NASA FIRMS (VIIRS Active Fire Data):** Satellite thermal observations provided by NASA's Earth Observing System Data and Information System ([EOSDIS FIRMS](https://firms.modaps.eosdis.nasa.gov/)).
+- **OpenStreetMap:** Crowdsourced open geospatial infrastructure data providing industrial facility polygons and points ([OpenStreetMap](https://www.openstreetmap.org/)).
 
-NASA FIRMS provides satellite-based active fire and thermal anomaly observations.
+*Note: All raw data files in `data/` remain strictly unmodified. All pipeline transformations and databases are written exclusively to `output/`.*
 
-Project source:
+## Current Status
 
-https://firms.modaps.eosdis.nasa.gov/
+- **Completed:**
+  - Ingestion, validation, and schema normalization of 12-month FIRMS Gujarat dataset.
+  - Spatial clustering (DBSCAN) establishing persistent thermal site registry.
+  - Ingestion and spatial matching against 710 OpenStreetMap industrial facilities.
+  - 52-week activity aggregation and 39-week historical statistical baselines.
+  - Rule-based anomaly detection engine with plain-English explanations.
+  - Controlled synthetic demo event generation with clear labeling.
+  - Offline GIS dashboard (Leaflet + Chart.js) and Flask REST API.
+  - Automated verification test suite (Checks C1–C15) and API tests.
+- **In Progress:**
+  - Cluster extent evaluation for candidate sites spanning $> 5\text{ km}$.
+  - Refinement of OSM tag mapping for industrial subtypes.
+- **Planned (Future Expansion):**
+  - Ingestion of multi-year FIRMS archives (5–10 years) for seasonal baseline adjustment.
+  - High-resolution visual verification via Sentinel-2 MSI and SAR imagery.
+  - Demographic exposure weighting using population grids (GHSL / WorldPop).
+  - Supervised machine-learning classification once ground-truth labeled training sets are curated.
+  - Automated notification service (SMS/Email/Webhook) for operational dispatch.
 
-### OpenStreetMap
+## Scientific Notes
 
-OpenStreetMap provides geographic and facility context used for spatial matching.
-
-Project source:
-
-https://www.openstreetmap.org/
-
-### Sentinel-2
-
-Sentinel-2 is identified in the project architecture as a future supporting source for higher-resolution verification and additional spatial evidence.
-
-Project source:
-
-https://dataspace.copernicus.eu/
-
-The technical report lists FIRMS, Sentinel-2, OpenStreetMap, and other open datasets as part of the broader proposed system.
-
----
-
-## Scientific Credibility
-
-THERMOGRAPH is a prototype and its results should be interpreted accordingly.
-
-The project follows these principles:
-
-- Do not treat every FIRMS detection as a confirmed fire.
-- Do not assign a facility when the spatial evidence is insufficient.
-- Do not claim ML accuracy without labelled validation data.
-- Do not fabricate training results or real-world alert performance.
-- Clearly identify simulated or synthetic demonstration events.
-- Preserve the source information behind processed results.
-- Keep raw source datasets separate from generated outputs.
-
-These principles support the project's stated goals of contextual, explainable, and human-verifiable thermal monitoring.
-
----
-
-## Current Development Status
-
-### Completed
-
-- [x] FIRMS data collection for Gujarat
-- [x] 12-month FIRMS dataset assembled
-- [x] FIRMS data verification
-- [x] OSM industrial facility dataset collected
-- [x] OSM GeoJSON validation
-- [x] Prototype scope defined
-- [x] Project and data inspection (T0)
-- [x] FIRMS ingestion into SQLite (T1)
-- [x] Detection data validation and export
-- [x] Git-based project setup
-
-### In Progress
-
-- [ ] Spatial clustering of FIRMS detections
-- [ ] Persistent thermal-site registry
-- [ ] OSM facility matching
-- [ ] Per-site historical baseline
-- [ ] Rule-based anomaly detection
-- [ ] Explainable risk/priority logic
-- [ ] Flask API
-- [ ] GIS dashboard
-- [ ] Demonstration workflow
-
-### Future Expansion
-
-- [ ] Larger historical FIRMS archive
-- [ ] Sentinel-2 verification
-- [ ] Population/context datasets
-- [ ] Labelled training dataset
-- [ ] Validated ML classification
-- [ ] Automated notifications
-- [ ] Multi-region / national deployment
-- [ ] Production spatial database
-
----
-
-## Planned End-to-End Flow
-
-```text
-FIRMS Data
-    ↓
-Validation & Normalisation
-    ↓
-Spatial + Temporal Clustering
-    ↓
-Persistent Thermal Sites
-    ↓
-OSM Facility Matching
-    ↓
-Historical Site Baseline
-    ↓
-Current Activity Comparison
-    ↓
-Anomaly Detection
-    ↓
-Explainable Priority
-    ↓
-GIS Dashboard
-```
-
-This workflow reflects the project's central architecture of thermal detection, facility context, historical baseline, anomaly intelligence, and decision support.
-
----
-
-## Project Goals
-
-THERMOGRAPH aims to demonstrate that satellite thermal observations become more useful when they are connected to:
-
-1. **Where the heat is**
-2. **What is located there**
-3. **How that location normally behaves**
-4. **Whether the current observation is unusual**
-5. **Why the system considers it important**
-
-The prototype focuses on proving this complete path with real collected data before expanding the system with additional datasets and machine-learning capabilities.
-
----
+- **Observations vs. Confirmed Fires:** Satellite thermal detections represent radiometric observations; they are not automatically confirmed structural or industrial fires.
+- **Evidence-Based Matching:** Industrial facility names are linked only when spatial proximity is supported ($\le 1,000\text{ m}$). Sites without spatial evidence remain designated as `UNMAPPED`.
+- **Transparent Logic:** Anomaly scoring uses documented statistical rules ($\mu + 3\sigma$) and prototype settings rather than black-box models. No unverified machine-learning accuracy claims are made.
+- **Simulation Integrity:** Demonstration events are isolated in Week 52, flagged with `is_simulated = 1`, hidden by default, and explicitly prefixed with `[SIMULATED]`.
 
 ## Team
 
 **VALKYRIES**  
-Siliguri Institute of Technology  
-Smart India Hackathon 2026  
-Problem Statement ID: **26162**
-
----
-
-## References
-
-- NASA FIRMS: https://firms.modaps.eosdis.nasa.gov/
-- NASA Earthdata: https://www.earthdata.nasa.gov/
-- Copernicus Data Space Ecosystem: https://dataspace.copernicus.eu/
-- OpenStreetMap: https://www.openstreetmap.org/
-- PostGIS Documentation: https://postgis.net/documentation/
-
-For the project's complete technical rationale and architecture, see the accompanying technical report.
-
----
+Siliguri Institute of Technology, Siliguri, West Bengal  
+- **Hackathon:** Smart India Hackathon 2026
+- **Problem Statement ID:** 26162
+- **Problem Statement Title:** *AI-Based Detection and Classification of Industrial Fires and Persistent Thermal Sources Using NASA FIRMS, OSM & Satellite Data*
+- **Theme:** Disaster Management | **Category:** Software
+- **Team ID:** 147017
 
 ## Disclaimer
 
-THERMOGRAPH is a Smart India Hackathon prototype developed for demonstrating a geospatial approach to industrial thermal monitoring.
-
-Prototype anomaly results are intended for demonstration and research purposes. They should not be treated as confirmed incidents or as a substitute for official investigation and verification.
+THERMOGRAPH is an academic and research prototype developed for Smart India Hackathon 2026. Anomaly detections and priority ratings are generated for analytical assistance and research demonstration; they should not be treated as confirmed emergency incidents without independent ground verification.

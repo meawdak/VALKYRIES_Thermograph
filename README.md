@@ -2,11 +2,15 @@
 
 > Geospatial monitoring prototype that turns satellite thermal hotspots into location-aware, explainable intelligence on persistent industrial activity.
 
-[![SIH 2026](https://img.shields.io/badge/SIH-2026-blue.svg)](https://www.sih.gov.in/)
-[![Problem Statement 26162](https://img.shields.io/badge/Problem%20Statement-26162-orange.svg)](https://www.sih.gov.in/)
-[![Team VALKYRIES](https://img.shields.io/badge/Team-VALKYRIES%20(147017)-purple.svg)](#team)
-[![Theme: Disaster Management](https://img.shields.io/badge/Theme-Disaster%20Management-red.svg)](#overview)
-[![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-brightgreen.svg)](#setup)
+## VALKYRIES
+
+- **Hackathon:** Smart India Hackathon 2026
+- **Problem Statement ID:** 26162
+- **Problem Statement Title:** *AI-Based Detection and Classification of Industrial Fires and Persistent Thermal Sources Using NASA FIRMS, OSM & Satellite Data*
+- **Theme:** Disaster Management | **Category:** Software
+- **Team ID:** 147017
+- **Institute:** Siliguri Institute of Technology, Siliguri, West Bengal  
+- [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-brightgreen.svg)](#setup)
 
 ---
 
@@ -223,16 +227,6 @@ VALKYRIES_Thermograph/
 - **Evidence-Based Matching:** Industrial facility names are linked only when spatial proximity is supported ($\le 1,000\text{ m}$). Sites without spatial evidence remain designated as `UNMAPPED`.
 - **Transparent Logic:** Anomaly scoring uses documented statistical rules ($\mu + 3\sigma$) and prototype settings rather than black-box models. No unverified machine-learning accuracy claims are made.
 - **Simulation Integrity:** Demonstration events are isolated in Week 52, flagged with `is_simulated = 1`, hidden by default, and explicitly prefixed with `[SIMULATED]`.
-
-## Team
-
-**VALKYRIES**  
-Siliguri Institute of Technology, Siliguri, West Bengal  
-- **Hackathon:** Smart India Hackathon 2026
-- **Problem Statement ID:** 26162
-- **Problem Statement Title:** *AI-Based Detection and Classification of Industrial Fires and Persistent Thermal Sources Using NASA FIRMS, OSM & Satellite Data*
-- **Theme:** Disaster Management | **Category:** Software
-- **Team ID:** 147017
 
 ## Disclaimer
 

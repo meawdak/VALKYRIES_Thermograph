@@ -9,8 +9,7 @@
 - **Problem Statement Title:** *AI-Based Detection and Classification of Industrial Fires and Persistent Thermal Sources Using NASA FIRMS, OSM & Satellite Data*
 - **Theme:** Disaster Management | **Category:** Software
 - **Team ID:** 147017
-- **Institute:** Siliguri Institute of Technology, Siliguri, West Bengal  
-- [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-brightgreen.svg)](#setup)
+- **Institute:** Siliguri Institute of Technology, Siliguri, West Bengal 
 
 ---
 
